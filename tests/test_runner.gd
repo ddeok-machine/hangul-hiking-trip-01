@@ -166,11 +166,14 @@ const EXPECTED_SECTIONS: Array[String] = [
 	"test_downed9cii_scene",
 	"test_hint9ciii_logic",
 	"test_hint9ciii_scene",
+	"test_predators9d_data",
+	"test_predators9d_logic",
+	"test_predators9d_scene",
 ]
 
 ## The run fails if fewer checks than this ran. After adding tests, raise it to
 ## the printed total minus a small margin (currently 6).
-const MIN_CHECKS := 4262
+const MIN_CHECKS := 4398
 
 
 func check(condition: bool, label: String) -> void:
@@ -192,6 +195,7 @@ func _ready() -> void:
 	Foraging.legacy_layout = true
 	AnimalsScript.tools_enabled = false  # the animal sections before Prompt 9c expect no tools in the scene; the 9c section turns them on
 	AnimalsScript.hints_enabled = false  # nor a hint letter pausing a long run; the 9c-iii section turns them on
+	AnimalsScript.predators_enabled = false  # nor predators hunting and attacking; the 9d section turns them on
 	print("== Hangul engine ==")
 	test_compose()
 	print("== Curriculum ==")
@@ -388,6 +392,10 @@ func _ready() -> void:
 	print("== Hint letters (Prompt 9c-iii) ==")
 	test_hint9ciii_logic()
 	await test_hint9ciii_scene()
+	print("== Predators: hunts, attacks, blocks (Prompt 9d) ==")
+	test_predators9d_data()
+	test_predators9d_logic()
+	await test_predators9d_scene()
 	for section in EXPECTED_SECTIONS:
 		if not finished.has(section):
 			check(false, "section did not run to its end: " + section)
@@ -14303,3 +14311,961 @@ func test_hint9ciii_scene() -> void:
 	get_window().size = window_before
 	await get_tree().process_frame
 	_section_done("test_hint9ciii_scene")
+
+
+# ---- Predators: hunts, attacks, tool blocks (Prompt 9d) ----
+
+const PredatorsScript := preload("res://scenes/animals/predators.gd")
+const KillGoreScript := preload("res://scenes/animals/kill_gore.gd")
+const AttackMarkScript := preload("res://scenes/animals/attack_mark.gd")
+
+
+## A world of Crossing + Predators on a deep copy of the animals data (so a test may change the
+## numbers): nobody spawns on its own. `speeds` maps a kind id to a new speed.
+func _pd_world(seed_value := 1, hunt_chance := 0.5, dive_chance := 0.5, speeds := {}) -> Dictionary:
+	var cfg: Dictionary = _animals_config().duplicate(true)
+	cfg["predators"]["hunt_chance"] = hunt_chance
+	cfg["attacks"]["crow"]["dive_chance"] = dive_chance
+	for kind in cfg["kinds"]:
+		if speeds.has(kind["id"]):
+			kind["speed"] = float(speeds[kind["id"]])
+	var crossing = CrossingScript.new(cfg, seed_value)
+	crossing._until_spawn = 1.0e9
+	var pred = PredatorsScript.new(cfg, crossing, seed_value + 100)
+	return {"cfg": cfg, "crossing": crossing, "pred": pred}
+
+
+## A walker of `kind_id` straight from the crossing's spawn (not yet in any scene).
+func _pd_spawn(crossing, kind_id: String):
+	for i in 1500:
+		crossing.alive.clear()
+		var walker = crossing.spawn()
+		if walker != null and walker.kind["id"] == kind_id:
+			return walker
+	return null
+
+
+## Stands a walker at `spot`: a straight route from there, no wobble, not fled, not held. `stand`:
+## it is at its linger spot (a hunt roll is due); otherwise it just walks.
+func _pd_put(walker, spot: Vector2, stand := true) -> void:
+	var route: Array[Vector2] = [spot, spot + Vector2(400.0, 0.0)]
+	walker.route = route
+	walker.amplitude = 0.0
+	walker.travelled = 0.0
+	walker.lingered = 0.0
+	walker.linger = 1000.0 if stand else 0.0
+	walker.stop_dist = 0.0 if stand else -1.0
+	walker.land_at = -1.0
+	walker.takeoff_at = -1.0
+	walker.fled = false
+	walker.held = false
+	walker.speed_scale = 1.0
+	walker.finalize()
+
+
+## The prey runs due east for a long way (so it neither leaves the map nor turns back).
+func _pd_run_east(walker) -> void:
+	var spot: Vector2 = walker.position()
+	var route: Array[Vector2] = [spot, spot + Vector2(130.0, 0.0)]
+	walker.route = route
+	walker.travelled = 0.0
+	walker.stop_dist = -1.0
+	walker.linger = 0.0
+	walker.lingered = 0.0
+	walker.amplitude = 0.0
+	walker.finalize()
+
+
+func _pd_ctx(standing: Dictionary, equipped := {}, lure := false, controlled := "fernanda", attacks_on := true) -> Dictionary:
+	return {"standing": standing, "equipped": equipped, "lure": lure, "controlled": controlled, "attacks_on": attacks_on}
+
+
+## Ticks the world (crossing then predators) until an event named `wanted` comes, at most `limit`
+## seconds. Returns {"events": all events, "t": seconds run, "found": bool}.
+func _pd_until(world: Dictionary, ctx: Dictionary, wanted: String, limit: float, dt := 1.0 / 60.0) -> Dictionary:
+	var all: Array = []
+	var t := 0.0
+	while t < limit:
+		world["crossing"].tick(dt)
+		var events: Array = world["pred"].tick(dt, ctx)
+		t += dt
+		all.append_array(events)
+		for e in events:
+			if e["event"] == wanted:
+				return {"events": all, "t": t, "found": true}
+	return {"events": all, "t": t, "found": false}
+
+
+func _pd_count(events: Array, name: String) -> int:
+	var n := 0
+	for e in events:
+		if e["event"] == name:
+			n += 1
+	return n
+
+
+## Runs one attack from the start: the predator `walker` (already put) attacks `traveler` standing at
+## `where`, who moves to `moved_to` at the first tick of the charge (null: stays). Returns the
+## impact event ({} if none came within 8 s).
+func _pd_attack(world: Dictionary, walker, traveler: String, where: Vector2, equipped := {}, moved_to = null, crow := false, controlled := "fernanda") -> Dictionary:
+	var pred = world["pred"]
+	var standing := {traveler: where}
+	var ctx := _pd_ctx(standing, equipped, false, controlled)
+	var scratch: Array[Dictionary] = []
+	pred.begin_attack(walker, traveler, where, crow, scratch)
+	var dt := 1.0 / 30.0
+	var t := 0.0
+	while t < 8.0:
+		var phase: String = pred.phase_of(walker)
+		if phase == "charge" and moved_to != null:
+			standing[traveler] = moved_to
+			moved_to = null
+		for e in pred.tick(dt, ctx):
+			if e["event"] == "impact":
+				return e
+		t += dt
+	return {}
+
+
+func test_predators9d_data() -> void:
+	var cfg: Dictionary = _animals_config()
+	var preds: Dictionary = cfg["predators"]
+	var attacks: Dictionary = cfg["attacks"]
+	var names := {}
+	var predator_ids: Array[String] = []
+	for kind in cfg["kinds"]:
+		names[String(kind["id"])] = String(kind["name_ko"])
+		if bool(kind["predator"]):
+			predator_ids.append(String(kind["id"]))
+	var prey_ko := {
+		"들개": ["노루", "고라니", "사슴", "오소리"],
+		"멧돼지": ["노루", "비바리뱀"],
+		"검독수리": ["오리", "제주족제비", "비바리뱀", "고라니"]}
+	for predator_ko in prey_ko:
+		var id := ""
+		for kind_id in names:
+			if names[kind_id] == predator_ko:
+				id = String(kind_id)
+		var listed: Array = preds[id]["prey"] if id != "" and preds.has(id) else []
+		var as_ko: Array = []
+		for prey_id in listed:
+			as_ko.append(names.get(String(prey_id), "?"))
+		check(as_ko == prey_ko[predator_ko], "%s hunts exactly %s (data: %s)" % [predator_ko, str(prey_ko[predator_ko]), str(as_ko)])
+	check(predator_ids.size() == 3 and preds.has("deulgae") and preds.has("meotdwaeji") and preds.has("geomdokseuri"), "the predator kinds of the data are 들개, 멧돼지 and 검독수리 and each has an entry")
+	var prey_clean := true
+	for id in predator_ids:
+		for prey_id in preds[id]["prey"]:
+			prey_clean = prey_clean and names.has(prey_id) and not predator_ids.has(prey_id)
+	check(prey_clean, "every prey kind exists and none of them is a predator")
+	check(is_equal_approx(float(preds["hunt_chance"]), 0.5) and is_equal_approx(float(preds["hunt_radius_m"]), 18.0), "hunt_chance 0.5, hunt_radius_m 18")
+	check(is_equal_approx(float(preds["chase_speed_mult"]), 1.8) and is_equal_approx(float(preds["flee_speed_mult"]), 1.5), "the chase is 1.8x the predator's speed, the flight 1.5x")
+	check(is_equal_approx(float(preds["eat_s"]), 6.0) and is_equal_approx(float(preds["chase_max_s"]), 12.0), "eat_s 6, chase_max_s 12")
+	check(int(preds["deulgae"]["damage_max"]) == 4 and int(preds["meotdwaeji"]["damage_max"]) == 5 and int(preds["geomdokseuri"]["damage_max"]) == 4, "the hit damage maxima are 4 (들개), 5 (멧돼지), 4 (검독수리)")
+	var gore: Dictionary = preds["gore"]
+	check(int(gore["chunks_min"]) == 4 and int(gore["chunks_max"]) == 6 and is_equal_approx(float(gore["splat_fade_s"]), 30.0), "the kill gore: 4-6 chunks and a splat that fades over 30 s")
+	check(is_equal_approx(float(attacks["gap_min_s"]), 150.0) and is_equal_approx(float(attacks["gap_max_s"]), 210.0), "the attack gap is 150-210 s")
+	check(is_equal_approx(float(attacks["radius_m"]), 14.0) and is_equal_approx(float(attacks["telegraph_s"]), 1.2) and is_equal_approx(float(attacks["hit_radius_m"]), 1.0), "attack radius 14 m, telegraph 1.2 s, hit radius 1.0 m")
+	check(is_equal_approx(float(attacks["down_chance"]), 0.25) and is_equal_approx(float(attacks["lure_clock_mult"]), 1.5), "a hit downs with chance 1/4, the lure runs the clock 1.5x")
+	check(attacks["crow"]["kind"] == "keunburikkamagwi" and attacks["crow"]["lure_item"] == "eomuk_kkochi" and is_equal_approx(float(attacks["crow"]["dive_chance"]), 0.5) and int(attacks["crow"]["damage_max"]) == 3, "crows dive for the 어묵꼬치 with chance 0.5, 1..3 damage")
+	var blockers := {}
+	for item in Content.items.values():
+		if item.has("block_kind"):
+			blockers[String(item["id"])] = [String(item["block_kind"]), int(item["block_cost"])]
+	check(blockers == {"deungsan_stick": ["meotdwaeji", 2], "usan": ["keunburikkamagwi", 1]}, "only 등산스틱 (vs 멧돼지, 2 uses) and 우산 (vs 큰부리까마귀, 1 use) block: %s" % str(blockers))
+	_section_done("test_predators9d_data")
+
+
+func test_predators9d_logic() -> void:
+	var kinds: Array = _animals_config()["kinds"]
+	var both := {"fernanda": Vector2(36.0, 0.0), "nestor": Vector2(100.0, 0.0)}
+
+	# ---- Who hunts whom ----
+	var w := _pd_world(1)
+	var pred = w["pred"]
+	var matrix_ok := true
+	var any_pred_prey := false
+	for hunter in kinds:
+		for other in kinds:
+			var listed: bool = pred.prey_of(String(hunter["id"])).has(String(other["id"]))
+			matrix_ok = matrix_ok and (pred.is_prey(hunter, other) == listed)
+			if bool(other["predator"]) and pred.is_prey(hunter, other):
+				any_pred_prey = true
+	check(matrix_ok and not any_pred_prey, "is_prey() is exactly the data's lists, and no predator is prey")
+	check(pred.is_predator(_kind_named("들개")) and pred.is_predator(_kind_named("멧돼지")) and pred.is_predator(_kind_named("검독수리")) and not pred.is_predator(_kind_named("노루")) and not pred.is_predator(_kind_named("큰부리까마귀")), "predators are 들개, 멧돼지, 검독수리 (not 노루, not the crows)")
+
+	# ---- A non-prey beside a predator, and a prey out of range: no hunt ----
+	w = _pd_world(2, 1.0)
+	var boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	var dog = _pd_spawn(w["crossing"], "deulgae")
+	var far_noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(dog, Vector2(40.0, 0.0))
+	_pd_put(far_noru, Vector2(60.0, 0.0), false)  # 20 m from the dog, 30 from the boar
+	w["crossing"].alive.assign([boar, dog, far_noru])
+	var events: Array = w["pred"].tick(0.1, _pd_ctx({}))
+	check(_pd_count(events, "hunt_start") == 0 and not boar.held and not dog.held, "a prey 20 m away is out of the 18 m radius, a 멧돼지 beside a 들개 is no prey")
+	w = _pd_world(3, 1.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	var hog = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(dog, Vector2(40.0, 0.0))
+	_pd_put(hog, Vector2(44.0, 0.0), false)
+	w["crossing"].alive.assign([dog, hog])
+	events = w["pred"].tick(0.1, _pd_ctx(both))
+	check(_pd_count(events, "hunt_start") == 0 and not hog.fled, "a 들개 does not hunt a 멧돼지; and it does not hunt the travelers (nobody is hunted or attacked at once)")
+
+	# ---- The roll: hunt_chance 0 never, 1 always; once per predator ----
+	w = _pd_world(4, 0.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	var noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(dog, Vector2(40.0, 0.0))
+	_pd_put(noru, Vector2(44.0, 0.0), false)
+	w["crossing"].alive.assign([dog, noru])
+	events = w["pred"].tick(0.1, _pd_ctx({}))
+	check(_pd_count(events, "hunt_start") == 0 and w["pred"].rolled.has(dog.id), "hunt_chance 0: it rolled and does not hunt")
+	w["cfg"]["predators"]["hunt_chance"] = 1.0
+	events = w["pred"].tick(0.1, _pd_ctx({}))
+	check(_pd_count(events, "hunt_start") == 0, "...and it rolls only once (a second tick does not roll again)")
+	w = _pd_world(5, 1.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	noru = _pd_spawn(w["crossing"], "noru")
+	var goraeni = _pd_spawn(w["crossing"], "goraeni")
+	_pd_put(dog, Vector2(40.0, 0.0))
+	_pd_put(noru, Vector2(52.0, 0.0), false)
+	_pd_put(goraeni, Vector2(46.0, 4.0), false)
+	w["crossing"].alive.assign([dog, noru, goraeni])
+	events = w["pred"].tick(0.1, _pd_ctx({}))
+	check(_pd_count(events, "hunt_start") == 1 and events[0]["prey"] == goraeni, "hunt_chance 1: it hunts the NEAREST prey (고라니 at 7.2 m, not 노루 at 12 m)")
+	check(dog.held and is_equal_approx(goraeni.speed_scale, 1.5) and goraeni.fled and not noru.fled, "...the predator is held at its spot and the prey flees at 1.5x")
+
+	# ---- The chase reaches the prey: gore once, letter lost, then eat_s, then it leaves ----
+	w = _pd_world(6, 1.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(dog, Vector2(50.0, -5.0))
+	_pd_put(noru, Vector2(56.0, -5.0), false)
+	noru.letter = "ㅗ"
+	w["crossing"].alive.assign([dog, noru])
+	var ran: Dictionary = _pd_until(w, _pd_ctx({}), "kill", 12.0)
+	var kills: Array = ran["events"].filter(func(e: Dictionary) -> bool: return e["event"] == "kill")
+	check(ran["found"] and kills.size() == 1 and ran["t"] < 12.0, "a 들개 closes 6 m on a fleeing 노루 and catches it (%.2f s)" % ran["t"])
+	check(not w["crossing"].alive.has(noru) and w["crossing"].alive.has(dog) and w["pred"].kills == 1, "the catch takes the prey off the map and nothing else")
+	check(kills[0]["letter"] == "ㅗ" and kills[0]["prey"] == noru and kills[0]["at"].distance_to(dog.position()) < 0.8, "the kill names the prey, its lost letter and the place (right where the predator is)")
+	check(dog.held and w["pred"].phase_of(dog) == "eat" and w["pred"].marks().is_empty(), "the predator stays at the kill, eating")
+	var eat_start: Vector2 = dog.position()
+	var more: Dictionary = _pd_until(w, _pd_ctx({}), "hunt_end", 5.9)
+	check(not more["found"] and dog.held and dog.position().is_equal_approx(eat_start), "...for eat_s (still there after 5.9 s, no second kill)")
+	more = _pd_until(w, _pd_ctx({}), "hunt_end", 0.5)
+	check(more["found"] and more["events"].filter(func(e: Dictionary) -> bool: return e["event"] == "hunt_end")[0]["why"] == "ate" and not dog.held and not dog.fled, "...then it leaves normally (released after 6 s, not fleeing)")
+	var exits := 0
+	var t := 0.0
+	while t < 60.0 and exits == 0:
+		for e in w["crossing"].tick(0.1):
+			if e["event"] == CrossingScript.EXIT and e["walker"] == dog:
+				exits += 1
+		t += 0.1
+	check(exits == 1, "...and walks off the map (%.0f s)" % t)
+
+	# ---- Gives up after chase_max_s ----
+	w = _pd_world(7, 1.0)
+	var boar2 = _pd_spawn(w["crossing"], "meotdwaeji")
+	noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(boar2, Vector2(20.0, 0.0))
+	_pd_put(noru, Vector2(37.0, 0.0), false)  # a 멧돼지 (5.4 m/s) gains 0.15 m/s on a fleeing 노루 (5.25)
+	w["crossing"].alive.assign([boar2, noru])
+	events = w["pred"].tick(1.0 / 60.0, _pd_ctx({}))
+	_pd_run_east(noru)
+	check(_pd_count(events, "hunt_start") == 1 and boar2.held, "(setup) a 멧돼지 chases a 노루 17 m ahead")
+	ran = _pd_until(w, _pd_ctx({}), "hunt_end", 20.0)
+	var ends: Array = ran["events"].filter(func(e: Dictionary) -> bool: return e["event"] == "hunt_end")
+	check(ran["found"] and ends[0]["why"] == "gave_up" and absf(ran["t"] - 12.0) < 0.1, "it gives up at chase_max_s (12 s: %.2f s)" % ran["t"])
+	check(not boar2.held and not boar2.fled and w["crossing"].alive.has(noru) and w["pred"].kills == 0 and w["pred"].states.is_empty(), "...no kill, the prey lives, the predator is free again")
+
+	# ---- The prey gets away off the map: the hunt just ends ----
+	w = _pd_world(8, 1.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(dog, Vector2(120.0, 0.0))
+	_pd_put(noru, Vector2(136.0, 0.0), false)
+	w["crossing"].alive.assign([dog, noru])
+	w["pred"].tick(1.0 / 60.0, _pd_ctx({}))
+	ran = _pd_until(w, _pd_ctx({}), "hunt_end", 12.0)
+	ends = ran["events"].filter(func(e: Dictionary) -> bool: return e["event"] == "hunt_end")
+	check(ran["found"] and ends[0]["why"] == "gone" and not dog.held, "a prey that leaves the map ends the hunt (the 들개 lets go)")
+
+	# ---- The eagle dives from flight height onto a duck on the water ----
+	w = _pd_world(9, 1.0)
+	var eagle = _pd_spawn(w["crossing"], "geomdokseuri")
+	var duck = _pd_spawn(w["crossing"], "ori")
+	_pd_put(eagle, Vector2(60.0, 30.0))
+	_pd_put(duck, Vector2(72.0, 30.0), false)
+	eagle.altitude = eagle.fly_height
+	duck.altitude = 0.0
+	w["crossing"].alive.assign([eagle, duck])
+	events = w["pred"].tick(1.0 / 60.0, _pd_ctx({}))
+	check(_pd_count(events, "hunt_start") == 1 and events[0]["prey"] == duck and eagle.altitude <= eagle.fly_height + 0.001, "a 검독수리 hunts a 오리 on the water from flight height")
+	var seen_high: float = eagle.altitude
+	ran = _pd_until(w, _pd_ctx({}), "kill", 12.0)
+	check(ran["found"] and seen_high > 2.0 and eagle.altitude < 0.5, "...diving: %.1f m when it set off, %.2f m at the kill" % [seen_high, eagle.altitude])
+	check(eagle.held and w["pred"].phase_of(eagle) == "eat", "...and it eats where the duck was")
+
+	# ---- A hunt cancelled from outside (the predator is grabbed): its state goes quietly ----
+	w = _pd_world(10, 1.0)
+	dog = _pd_spawn(w["crossing"], "deulgae")
+	noru = _pd_spawn(w["crossing"], "noru")
+	_pd_put(dog, Vector2(40.0, 0.0))
+	_pd_put(noru, Vector2(46.0, 0.0), false)
+	w["crossing"].alive.assign([dog, noru])
+	w["pred"].tick(0.1, _pd_ctx({}))
+	w["crossing"].flee(dog, 2.5)
+	check(not dog.held and dog.fled, "flee() frees a held predator (a grab in the middle of a hunt)")
+	w["pred"].tick(0.1, _pd_ctx({}))
+	check(w["pred"].states.is_empty(), "...and the hunt state is dropped")
+
+	# ---- The attack clock ----
+	w = _pd_world(11)
+	pred = w["pred"]
+	var gaps_ok := true
+	var lo := INF
+	var hi := -INF
+	for i in 300:
+		var g: float = pred.draw_gap()
+		gaps_ok = gaps_ok and g >= 150.0 and g <= 210.0
+		lo = minf(lo, g)
+		hi = maxf(hi, g)
+	check(gaps_ok and lo < 160.0 and hi > 200.0 and pred.attack_left >= 150.0 and pred.attack_left <= 210.0, "the gap is drawn from 150-210 s (seen %.0f-%.0f, the clock starts at %.0f)" % [lo, hi, pred.attack_left])
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	boar.letter = ""
+	w["crossing"].alive.assign([boar])
+	var first_gap: float = pred.attack_left
+	events = []
+	for i in 400:  # 400 s with a traveler 70 m from the predator: nothing
+		events.append_array(pred.tick(1.0, _pd_ctx({"fernanda": Vector2(100.0, 0.0)})))
+	check(events.is_empty() and pred.attack_left == 0.0 and not boar.held, "the clock runs out and WAITS with no predator within 14 m of a traveler (no attack in 400 s)")
+	events = pred.tick(0.1, _pd_ctx({"fernanda": Vector2(46.0, 0.0)}))
+	check(events.is_empty() and pred.attack_left == 0.0, "...a traveler 16 m away is still too far")
+	events = pred.tick(0.1, _pd_ctx({"fernanda": Vector2(44.0, 0.0)}))
+	check(_pd_count(events, "telegraph") == 1 and boar.held and pred.attack_left >= 150.0 and pred.attack_left <= 210.0, "...a traveler 14 m away: the attack starts at once and a new gap is drawn (%.0f s)" % pred.attack_left)
+	var a = _pd_world(12)
+	var b = _pd_world(12)
+	a["pred"].tick(60.0, _pd_ctx({}, {}, false))
+	b["pred"].tick(60.0, _pd_ctx({}, {}, true))
+	var start: float = _pd_world(12)["pred"].attack_left
+	check(is_equal_approx(a["pred"].attack_left, start - 60.0) and is_equal_approx(b["pred"].attack_left, start - 90.0), "with the 어묵꼬치 equipped the clock runs 1.5x faster (60 s costs 90 s of gap: %.1f vs %.1f)" % [start - a["pred"].attack_left, start - b["pred"].attack_left])
+	var c = _pd_world(12)
+	c["pred"].tick(60.0, _pd_ctx({}, {}, true, "fernanda", false))
+	check(is_equal_approx(c["pred"].attack_left, start), "the clock stands still while attacks are off (spelling view, death beat)")
+
+	# ---- Telegraph, then impact ----
+	w = _pd_world(13)
+	pred = w["pred"]
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	pred.attack_left = 0.0
+	var ctx := _pd_ctx(both)
+	events = pred.tick(1.0 / 60.0, ctx)
+	check(_pd_count(events, "telegraph") == 1 and events[0]["traveler"] == "fernanda" and events[0]["point"] == Vector2(36.0, 0.0) and not events[0]["crow"], "the nearest standing traveler is marked, at the traveler's own spot")
+	var marks: Array = pred.marks()
+	check(marks.size() == 1 and marks[0]["walker"] == boar and marks[0]["progress"] < 0.05 and boar.held and boar.position() == Vector2(30.0, 0.0), "the predator STOPS and shows its mark (progress ~0)")
+	for i in 60:
+		pred.tick(1.0 / 60.0, ctx)
+	check(pred.phase_of(boar) == "telegraph" and pred.marks()[0]["progress"] > 0.8 and boar.position() == Vector2(30.0, 0.0), "after 1 s it is still telegraphing and has not moved")
+	for i in 15:
+		pred.tick(1.0 / 60.0, ctx)
+	check(pred.phase_of(boar) == "charge", "after 1.2 s it charges")
+	var impact := {}
+	var impact_t := 0.0
+	while impact.is_empty() and impact_t < 4.0:
+		for e in pred.tick(1.0 / 60.0, ctx):
+			if e["event"] == "impact":
+				impact = e
+		impact_t += 1.0 / 60.0
+	check(not impact.is_empty() and impact["hit"] and impact_t > 0.6 and impact_t < 1.0, "it reaches the spot at 8 m/s (%.2f s) and hits the traveler still standing there" % impact_t)
+	check(impact["down"] or (impact["damage"] >= 1 and impact["damage"] <= 5), "...a hit is a downing or 1..5 half hearts (%s)" % str(impact))
+	check(boar.fled and not boar.held and is_equal_approx(boar.speed_scale, 2.5) and pred.states.is_empty() and pred.marks().is_empty(), "afterwards the 멧돼지 flees off screen at 2.5x, the mark is gone")
+
+	# ---- In or out of the ring ----
+	var spot := Vector2(36.0, 0.0)
+	for case in [[0.9, true], [1.0, true], [1.1, false], [3.0, false]]:
+		w = _pd_world(14)
+		boar = _pd_spawn(w["crossing"], "meotdwaeji")
+		_pd_put(boar, Vector2(30.0, 0.0))
+		w["crossing"].alive.assign([boar])
+		impact = _pd_attack(w, boar, "fernanda", spot, {}, spot + Vector2(float(case[0]), 0.0))
+		check(not impact.is_empty() and impact["hit"] == case[1] and (case[1] or (impact["damage"] == 0 and not impact["down"])), "a traveler %.1f m from the marked spot at impact is %s" % [case[0], "hit" if case[1] else "missed (no damage)"])
+
+	# ---- Downed travelers are never targeted ----
+	w = _pd_world(15)
+	pred = w["pred"]
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	pred.attack_left = 0.0
+	events = pred.tick(0.1, _pd_ctx({"nestor": Vector2(40.0, 0.0)}))  # Fernanda (nearer) is down: she is not in `standing`
+	check(_pd_count(events, "telegraph") == 1 and events[0]["traveler"] == "nestor", "with Fernanda down only Nestor is marked, though she is nearer")
+	w = _pd_world(16)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	w["pred"].attack_left = 0.0
+	events = w["pred"].tick(0.1, _pd_ctx({}))
+	check(events.is_empty() and not boar.held, "with both down nobody is targeted")
+	w = _pd_world(17)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	impact = _pd_attack(w, boar, "fernanda", spot, {}, null)
+	check(not impact.is_empty() and impact["hit"], "(setup) the attack hits")
+	w = _pd_world(17)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	var scratch: Array[Dictionary] = []
+	w["pred"].begin_attack(boar, "fernanda", spot, false, scratch)
+	impact = {}
+	for i in 300:
+		for e in w["pred"].tick(1.0 / 30.0, _pd_ctx({"nestor": Vector2(100.0, 0.0)})):  # downed meanwhile: not in standing
+			if e["event"] == "impact":
+				impact = e
+	check(not impact.is_empty() and not impact["hit"] and impact["damage"] == 0, "a traveler downed during the telegraph is not hit")
+
+	# ---- The downing roll and the damage, seeded ----
+	for kind_id in ["deulgae", "meotdwaeji", "geomdokseuri"]:
+		var cap := int(_animals_config()["predators"][kind_id]["damage_max"])
+		var downs := 0
+		var seen := {}
+		var in_range := true
+		var sequence: Array = []
+		w = _pd_world(18)
+		var attacker = _pd_spawn(w["crossing"], kind_id)
+		for i in 300:
+			_pd_put(attacker, Vector2(30.0, 0.0))
+			attacker.altitude = attacker.fly_height if bool(attacker.kind["flies"]) else 0.0
+			w["crossing"].alive.assign([attacker])
+			w["pred"].states.clear()
+			impact = _pd_attack(w, attacker, "fernanda", spot)
+			if impact.is_empty() or not impact["hit"]:
+				in_range = false
+				continue
+			if impact["down"]:
+				downs += 1
+				in_range = in_range and impact["damage"] == 0
+			else:
+				seen[impact["damage"]] = true
+				in_range = in_range and impact["damage"] >= 1 and impact["damage"] <= cap
+			sequence.append([impact["down"], impact["damage"]])
+		check(in_range and seen.has(1) and seen.has(cap), "%s: a hit that does not down rolls 1..%d half hearts and reaches both ends" % [kind_id, cap])
+		check(downs >= 55 and downs <= 95, "%s: about 1 hit in 4 downs (%d of 300)" % [kind_id, downs])
+		w = _pd_world(18)
+		attacker = _pd_spawn(w["crossing"], kind_id)
+		var again: Array = []
+		for i in 40:
+			_pd_put(attacker, Vector2(30.0, 0.0))
+			attacker.altitude = attacker.fly_height if bool(attacker.kind["flies"]) else 0.0
+			w["crossing"].alive.assign([attacker])
+			w["pred"].states.clear()
+			impact = _pd_attack(w, attacker, "fernanda", spot)
+			again.append([impact["down"], impact["damage"]])
+		check(again == sequence.slice(0, 40), "%s: the same seed gives the same rolls" % kind_id)
+
+	# ---- The eagle dives for the traveler ----
+	w = _pd_world(19)
+	eagle = _pd_spawn(w["crossing"], "geomdokseuri")
+	_pd_put(eagle, Vector2(30.0, 0.0))
+	eagle.altitude = eagle.fly_height
+	w["crossing"].alive.assign([eagle])
+	var scratch2: Array[Dictionary] = []
+	w["pred"].begin_attack(eagle, "fernanda", spot, false, scratch2)
+	var high: float = eagle.altitude
+	for i in 200:
+		w["pred"].tick(1.0 / 60.0, _pd_ctx({"fernanda": spot}))
+	check(high >= 3.9 and eagle.fled and eagle.altitude >= eagle.fly_height - 0.001, "the 검독수리 telegraphs at flight height, dives, and flies off high again")
+
+	# ---- Blocks ----
+	var stick: Dictionary = Content.item("deungsan_stick")
+	var umbrella: Dictionary = Content.item("usan")
+	var skewer: Dictionary = Content.item("eomuk_kkochi")
+	w = _pd_world(20)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	impact = _pd_attack(w, boar, "fernanda", spot, stick)
+	check(impact["hit"] and impact["blocked"] and impact["cost"] == 2 and impact["damage"] == 0 and not impact["down"], "등산스틱 vs a 멧돼지 charge: blocked, no damage, spends 2 uses")
+	check(boar.fled and not boar.held and boar.position().distance_to(spot) >= 2.4, "...the boar is knocked back (%.1f m) and flees" % boar.position().distance_to(spot))
+	for case in [["meotdwaeji", umbrella], ["meotdwaeji", skewer], ["deulgae", stick], ["geomdokseuri", stick], ["geomdokseuri", umbrella]]:
+		w = _pd_world(21)
+		var attacker = _pd_spawn(w["crossing"], case[0])
+		_pd_put(attacker, Vector2(30.0, 0.0))
+		attacker.altitude = attacker.fly_height if bool(attacker.kind["flies"]) else 0.0
+		w["crossing"].alive.assign([attacker])
+		impact = _pd_attack(w, attacker, "fernanda", spot, case[1])
+		check(impact["hit"] and not impact["blocked"] and impact["cost"] == 0 and (impact["down"] or impact["damage"] >= 1), "%s hits through the wrong tool (%s)" % [case[0], case[1]["id"]])
+	w = _pd_world(22)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	impact = _pd_attack(w, boar, "nestor", spot, stick)  # the pole is Fernanda's (the controlled one's)
+	check(impact["hit"] and not impact["blocked"], "the pole protects only the traveler who holds it")
+	w = _pd_world(23)
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	impact = _pd_attack(w, boar, "fernanda", spot, stick, spot + Vector2(4.0, 0.0))
+	check(not impact["hit"] and not impact["blocked"] and impact["cost"] == 0, "a dodged charge is no block and spends nothing")
+
+	# ---- Crows ----
+	w = _pd_world(24, 0.5, 1.0)
+	pred = w["pred"]
+	var crow = _pd_spawn(w["crossing"], "keunburikkamagwi")
+	_pd_put(crow, Vector2(30.0, 0.0), false)
+	crow.altitude = crow.fly_height
+	w["crossing"].alive.assign([crow])
+	events = pred.tick(0.1, _pd_ctx({"fernanda": spot}, {}, false))
+	check(events.is_empty() and not crow.held and pred.crow_seen.has(crow.id), "a crow comes into view and the skewer is NOT equipped: no dive")
+	for i in 5:
+		events = pred.tick(0.1, _pd_ctx({"fernanda": spot}, {}, true))
+	check(events.is_empty() and not crow.held, "...and it never rolls again, later equipping the skewer does not matter")
+	w = _pd_world(25, 0.5, 1.0)
+	pred = w["pred"]
+	crow = _pd_spawn(w["crossing"], "keunburikkamagwi")
+	_pd_put(crow, Vector2(30.0, 0.0), false)
+	crow.altitude = crow.fly_height
+	w["crossing"].alive.assign([crow])
+	w["crossing"].view = Rect2(100.0, -10.0, 20.0, 20.0)
+	events = pred.tick(0.1, _pd_ctx({"fernanda": spot}, {}, true))
+	check(events.is_empty() and not pred.crow_seen.has(crow.id), "a crow outside the view rolls nothing")
+	w["crossing"].view = Rect2(0.0, -36.0, 144.0, 72.0)
+	var attack_before: float = pred.attack_left
+	events = pred.tick(0.1, _pd_ctx({"fernanda": spot}, {}, true))
+	check(_pd_count(events, "telegraph") == 1 and events[0]["crow"] and events[0]["traveler"] == "fernanda" and events[0]["point"] == spot and crow.held, "...a crow that comes into view with the skewer equipped dives at the controlled traveler (telegraph, same ring)")
+	check(is_equal_approx(attack_before - pred.attack_left, 0.15), "...a crow's dive does not touch the attack clock (it just ran 1.5x: %.2f s)" % (attack_before - pred.attack_left))
+	impact = {}
+	for i in 100:
+		for e in pred.tick(1.0 / 30.0, _pd_ctx({"fernanda": spot}, {}, true)):
+			if e["event"] == "impact":
+				impact = e
+	check(not impact.is_empty() and impact["crow"] and impact["hit"] and not impact["down"] and impact["damage"] >= 1 and impact["damage"] <= 3 and crow.fled, "the dive hits for 1..3 half hearts (never a downing roll) and the crow flies off")
+	var hits := 0
+	var downs_ever := 0
+	var biggest := 0
+	var smallest := 99
+	w = _pd_world(26, 0.5, 0.5)
+	pred = w["pred"]
+	crow = _pd_spawn(w["crossing"], "keunburikkamagwi")
+	for i in 300:
+		_pd_put(crow, Vector2(30.0, 0.0), false)
+		crow.altitude = crow.fly_height
+		crow.id = 5000 + i
+		pred.states.clear()
+		w["crossing"].alive.assign([crow])
+		var got: Array = pred.tick(0.1, _pd_ctx({"fernanda": spot}, {}, true))
+		if _pd_count(got, "telegraph") == 1:
+			hits += 1
+			var landed := {}
+			for j in 120:
+				for e in pred.tick(1.0 / 30.0, _pd_ctx({"fernanda": spot}, {}, true)):
+					if e["event"] == "impact":
+						landed = e
+			downs_ever += 1 if landed["down"] else 0
+			biggest = maxi(biggest, int(landed["damage"]))
+			smallest = mini(smallest, int(landed["damage"]))
+	check(hits >= 120 and hits <= 180 and downs_ever == 0 and biggest == 3 and smallest == 1, "each crow in view dives with chance 0.5 (%d of 300), 1..3 damage, no downings" % hits)
+	w = _pd_world(27, 0.5, 1.0)
+	crow = _pd_spawn(w["crossing"], "keunburikkamagwi")
+	_pd_put(crow, Vector2(30.0, 0.0), false)
+	crow.altitude = crow.fly_height
+	w["crossing"].alive.assign([crow])
+	var cs: Array[Dictionary] = []
+	w["pred"].begin_attack(crow, "fernanda", spot, true, cs)
+	impact = {}
+	for i in 300:
+		for e in w["pred"].tick(1.0 / 30.0, _pd_ctx({"fernanda": spot}, umbrella, true)):
+			if e["event"] == "impact":
+				impact = e
+	check(impact["hit"] and impact["blocked"] and impact["cost"] == 1 and impact["damage"] == 0, "우산 vs a crow dive: blocked, 1 use, no damage")
+	w = _pd_world(28, 0.5, 1.0)
+	crow = _pd_spawn(w["crossing"], "keunburikkamagwi")
+	_pd_put(crow, Vector2(30.0, 0.0), false)
+	crow.altitude = crow.fly_height
+	w["crossing"].alive.assign([crow])
+	cs = []
+	w["pred"].begin_attack(crow, "fernanda", spot, true, cs)
+	impact = {}
+	for i in 300:
+		for e in w["pred"].tick(1.0 / 30.0, _pd_ctx({"fernanda": spot}, stick, true)):
+			if e["event"] == "impact":
+				impact = e
+	check(impact["hit"] and not impact["blocked"], "a 등산스틱 does not stop a crow")
+
+	# ---- Attacks stand still when told to ----
+	w = _pd_world(29)
+	pred = w["pred"]
+	boar = _pd_spawn(w["crossing"], "meotdwaeji")
+	_pd_put(boar, Vector2(30.0, 0.0))
+	w["crossing"].alive.assign([boar])
+	pred.attack_left = 0.0
+	pred.tick(0.1, _pd_ctx(both))
+	for i in 100:
+		pred.tick(0.1, _pd_ctx(both, {}, false, "fernanda", false))
+	check(pred.phase_of(boar) == "telegraph" and pred.marks()[0]["progress"] < 0.2, "the telegraph waits while attacks are off (spelling view)")
+	_section_done("test_predators9d_logic")
+
+
+func test_predators9d_scene() -> void:
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	var tools_before: bool = AnimalsScript.tools_enabled
+	AnimalsScript.tools_enabled = false  # the tools of these tests are put in by hand
+	AnimalsScript.predators_enabled = true
+	var gore_cfg: Dictionary = _animals_config()["predators"]["gore"]
+
+	# ---- A hunt on the map: the kill, the gore, the lost letter ----
+	GameState.new_hike()
+	var map: Node3D = await _animals_map(91)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 1.0
+	map.needs.seconds = 1.0e9
+	var ids := _hint_discover(map, ["noru"])
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 52.0, -4.0)
+	var dog = _spawn_kind(map, "deulgae")
+	var noru = _spawn_kind(map, "noru")
+	_pd_put(dog, Vector2(44.0, -5.0))
+	_pd_put(noru, Vector2(50.0, -5.0), false)
+	var lost_letter: String = noru.letter
+	var basket_before: Array = map.picking.basket.duplicate()
+	map.step(Vector2.ZERO, DT)
+	_pd_run_east(noru)  # it runs due east and stays on the map
+	check(map.predators.phase_of(dog) == "chase" and noru.fled and is_equal_approx(noru.speed_scale, 1.5), "(setup) a 들개 hunts the 노루 beside the travelers")
+	var blood_before := _count_named(map, "Blood")
+	var steps := 0
+	while map.predators.kills == 0 and steps < 600:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	check(map.predators.kills == 1 and not map.crossing.alive.has(noru) and not map.animal_nodes.has(noru), "the 들개 catches the 노루 (%.1f s): it is off the map and its node is gone" % (steps * DT))
+	check(map.kill_gores == 1 and _count_named(map, "KillGore") == 1, "the kill gore plays once")
+	var gore_node: Node3D = map.get_node("KillGore")
+	check(gore_node.chunks.size() >= 4 and gore_node.chunks.size() <= 6, "...4-6 chunks (%d)" % gore_node.chunks.size())
+	check(gore_node.get_node_or_null("Blood") != null and gore_node.splat != null and gore_node.splat.mesh is CylinderMesh and absf(gore_node.splat.global_position.x - noru.position().x) < 4.0, "...a big blood burst and a ground splat at the kill")
+	check(gore_node.get_node("Blood").amount >= roundi(40.0 * float(gore_cfg["blood_strength"])) - 1, "...the blood is %.0fx the normal burst" % float(gore_cfg["blood_strength"]))
+	gore_node.advance(0.2)
+	var flying: bool = not gore_node.all_landed()
+	gore_node.advance(3.0)
+	var rested: bool = gore_node.all_landed()
+	var low := true
+	for chunk in gore_node.chunks:
+		low = low and (chunk["node"] as Node3D).global_position.y < map.terrain.height_at((chunk["node"] as Node3D).global_position.x) + 0.3
+	check(flying and rested and low, "...the chunks tumble through the air, then land and settle on the ground")
+	check(gore_node.alpha() > 0.85 and gore_node.alpha() < 0.95, "...the splat has barely faded after 3 s (%.2f)" % gore_node.alpha())
+	gore_node.advance(11.0)
+	check(gore_node.alpha() > 0.4 and gore_node.alpha() < 0.55, "...about half gone after 14 s (%.2f)" % gore_node.alpha())
+	gore_node.advance(17.0)
+	check(gore_node.is_queued_for_deletion(), "...gone after 30 s")
+	check(map.picking.basket == basket_before and not map.slot_walker.has(map.walker_slot.get(noru, -1)), "the prey's letter (%s) is lost: it did not reach the basket" % lost_letter)
+	var coverage := {}
+	var missing: Dictionary = map.needs.missing_letters(map.spelling, map.picking.basket)
+	var all_missing := {}
+	for letter in map.supply.letters:
+		all_missing[letter] = 1
+	for i in 400:
+		coverage[map.supply.draw(false, all_missing)] = true
+	check(coverage.size() == map.supply.letters.size(), "...the letter supply is untouched: every jamo, %s too, can still be drawn" % lost_letter)
+	var lacking_seen := 0
+	for i in 3:
+		lacking_seen += 1 if missing.has(map.supply.draw(true, missing)) else 0
+	check(missing.is_empty() or lacking_seen >= 1, "...and a missing letter still turns up within guarantee_every ground spawns (%d of 3)" % lacking_seen)
+	check(map.predators.phase_of(dog) == "eat" and map.predators.phase_of(dog) != "", "the 들개 stays at the kill")
+	for i in roundi(5.8 / DT):
+		map.step(Vector2.ZERO, DT)
+	check(dog.held, "...eating for six seconds")
+	for i in roundi(0.5 / DT):
+		map.step(Vector2.ZERO, DT)
+	check(not dog.held and map.predators.states.is_empty(), "...then it leaves normally")
+	check(map.needs.entries.size() == ids.size(), "(no new need was found)")
+	map.free()
+	get_tree().paused = false
+
+	# ---- A watched animal that is eaten just stops the watch ----
+	GameState.new_hike()
+	map = await _animals_map(92)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 52.0, -4.0)
+	noru = _spawn_kind(map, "noru")
+	dog = _spawn_kind(map, "deulgae")
+	_pd_put(noru, Vector2(54.0, -5.0), false)
+	_pd_put(dog, Vector2(60.0, -5.0))
+	_pd_run_east(noru)
+	for i in 60:
+		map.step(Vector2.ZERO, DT)
+	check(map.needs.progress_of(noru.id) > 0.1, "(setup) the 노루 is being watched (%.2f)" % map.needs.progress_of(noru.id))
+	var watched_id: int = noru.id
+	map.predators.config["hunt_chance"] = 1.0
+	map.predators.rolled.clear()
+	map.step(Vector2.ZERO, DT)
+	_pd_run_east(noru)
+	var died := false
+	for i in 400:
+		map.step(Vector2.ZERO, DT)
+		if map.predators.kills > 0:
+			died = true
+			break
+	map.step(Vector2.ZERO, DT)
+	check(died and map.needs.progress_of(watched_id) == 0.0 and map.needs.entries.is_empty(), "eaten: the watch just stops (no need found, no error)")
+	map.free()
+	get_tree().paused = false
+
+	# ---- Off by default: no hunting or attacks while predators_enabled is false ----
+	AnimalsScript.predators_enabled = false
+	GameState.new_hike()
+	map = await _animals_map(93)
+	map.crossing._until_spawn = 1.0e9
+	map.predators.attack_left = 0.0
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 1.0
+	_put(map, map.player, 50.0, -5.0)
+	var boar = _spawn_kind(map, "meotdwaeji")
+	noru = _spawn_kind(map, "noru")
+	_pd_put(boar, Vector2(44.0, -5.0))
+	_pd_put(noru, Vector2(46.0, -5.0), false)
+	for i in 120:
+		map.step(Vector2.ZERO, DT)
+	check(not boar.held and map.predators.states.is_empty() and map.attack_marks.is_empty(), "with predators_enabled off nothing hunts or attacks")
+	map.free()
+	get_tree().paused = false
+	AnimalsScript.predators_enabled = true
+
+	# ---- An attack on the map: telegraph, ring, hit ----
+	GameState.new_hike()
+	map = await _animals_map(94)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["down_chance"] = 0.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	boar = _spawn_kind(map, "meotdwaeji")
+	_pd_put(boar, Vector2(44.0, -5.0))
+	var units_before: int = GameState.heart_units["fernanda"]
+	map.step(Vector2.ZERO, DT)
+	check(map.predators.phase_of(boar) == "" and map.attack_marks.is_empty(), "(setup) while the clock has time left nothing happens")
+	map.predators.attack_left = 0.0
+	map.step(Vector2.ZERO, DT)
+	check(map.predators.phase_of(boar) == "telegraph" and map.attack_marks.size() == 1 and _count_named(map, "AttackMark") == 1, "the clock has run out and a predator is near: the 멧돼지 stops and a mark appears")
+	var mark: Node3D = map.attack_marks[boar.id]
+	check(mark.label.text == "!" and mark.label.modulate.r > 0.9 and mark.label.modulate.g < 0.3 and mark.ring.mesh != null, "...a red '!' and a ring")
+	check(mark.point == Vector2(map.player.global_position.x, map.player.global_position.z) and mark.global_position.distance_to(Vector3(map.player.global_position.x, map.terrain.height_at(map.player.global_position.x), map.player.global_position.z)) < 0.01, "...on the ground at Fernanda's spot")
+	var first_ring: float = mark.radius_at(mark.progress)
+	for i in 36:
+		map.step(Vector2.ZERO, DT)
+	check(mark.progress > 0.4 and mark.progress < 0.6 and mark.radius_at(mark.progress) < first_ring - 0.5, "...the ring shrinks as the telegraph runs (progress %.2f, radius %.2f -> %.2f)" % [mark.progress, first_ring, mark.radius_at(mark.progress)])
+	check(boar.position().is_equal_approx(Vector2(44.0, -5.0)), "...and the boar has not moved")
+	blood_before = _count_named(map, "Blood")
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	var lost: int = units_before - int(GameState.heart_units["fernanda"])
+	check(lost >= 1 and lost <= 5 and not GameState.is_downed("fernanda"), "she stands in the ring and is hit for 1..5 half hearts (%d)" % lost)
+	check(boar.fled and not boar.held and map.attack_marks.is_empty(), "...the boar flees and the mark is gone")
+	check(map.predators.attack_count == 1, "(one attack was made)")
+	map.free()
+	get_tree().paused = false
+
+	# ---- Dodging: step out of the ring ----
+	GameState.new_hike()
+	map = await _animals_map(95)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	boar = _spawn_kind(map, "meotdwaeji")
+	_pd_put(boar, Vector2(44.0, -5.0))
+	map.predators.attack_left = 0.0
+	map.step(Vector2.ZERO, DT)
+	check(map.attack_marks.size() == 1, "(setup) the telegraph starts")
+	_put(map, map.player, 50.0, 2.0)  # 7 m out of the ring
+	units_before = GameState.heart_units["fernanda"]
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	check(GameState.heart_units["fernanda"] == units_before and GameState.heart_units["nestor"] == GameState.max_units(), "out of the ring the charge misses: nobody is hurt")
+	check(boar.fled and not boar.held, "...and the boar flees all the same")
+	check(map.predators.attack_left >= 140.0, "(the next gap is drawn: %.0f s)" % map.predators.attack_left)
+	map.free()
+	get_tree().paused = false
+
+	# ---- Down roll, a downed traveler is not targeted, the gloves ----
+	GameState.new_hike()
+	map = await _animals_map(96)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["down_chance"] = 1.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	boar = _spawn_kind(map, "meotdwaeji")
+	_pd_put(boar, Vector2(44.0, -5.0))
+	map.predators.attack_left = 0.0
+	steps = 0
+	map.step(Vector2.ZERO, DT)
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	check(GameState.is_downed("fernanda") and not GameState.is_downed("nestor"), "a hit that rolls the 1/4 downs Fernanda (revive rules take over)")
+	map.step(Vector2.ZERO, DT)
+	check(map.downed_countdown.clock.running and GameState.controlled == "nestor", "...the countdown starts and control passes to Nestor")
+	var boar2 = _spawn_kind(map, "meotdwaeji")
+	_put(map, map.player, 54.0, -5.0)
+	_pd_put(boar2, Vector2(46.0, -5.0))
+	map.predators.attack_left = 0.0
+	map.step(Vector2.ZERO, DT)
+	check(map.predators.phase_of(boar2) == "telegraph" and map.predators.states[boar2.id]["traveler"] == "nestor", "a downed traveler is never targeted (the nearer Fernanda lies there; Nestor is marked)")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	map = await _animals_map(97)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["down_chance"] = 0.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	var gloves := GameState.tools.add("gomu_janggap")
+	GameState.tools.equip(gloves)
+	dog = _spawn_kind(map, "deulgae")
+	_pd_put(dog, Vector2(44.0, -5.0))
+	map.predators.attack_left = 0.0
+	map.step(Vector2.ZERO, DT)
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	check(GameState.tools.count("gomu_janggap") == 0 and GameState.heart_units["fernanda"] < GameState.max_units(), "a predator that hits shreds the equipped 고무장갑")
+	map.free()
+	get_tree().paused = false
+
+	# ---- Blocks on the map ----
+	GameState.new_hike()
+	map = await _animals_map(98)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	var pole := GameState.tools.add("deungsan_stick")
+	GameState.tools.equip(pole)
+	boar = _spawn_kind(map, "meotdwaeji")
+	_pd_put(boar, Vector2(44.0, -5.0))
+	map.predators.attack_left = 0.0
+	map.step(Vector2.ZERO, DT)
+	units_before = GameState.heart_units["fernanda"]
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	var held_pole: Dictionary = GameState.tools.equipped()
+	check(GameState.heart_units["fernanda"] == units_before and not held_pole.is_empty() and held_pole["uses"] == 8, "등산스틱 equipped: the charge is blocked, no damage, 2 uses spent (%s left)" % str(held_pole.get("uses")))
+	check(boar.fled and boar.position().distance_to(Vector2(map.player.global_position.x, map.player.global_position.z)) > 2.0, "...the boar is knocked back and flees")
+	check(map.get_node_or_null("FloatingLabel") != null and map.get_node("FloatingLabel").text.contains("blocked"), "...a '등산스틱 blocked!' label shows")
+	map.free()
+	get_tree().paused = false
+
+	# ---- Crows: the skewer draws them, the umbrella blocks one ----
+	GameState.new_hike()
+	map = await _animals_map(99)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["crow"]["dive_chance"] = 1.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	var crow = _spawn_kind(map, "keunburikkamagwi")
+	_pd_put(crow, Vector2(52.0, -7.0), false)
+	crow.altitude = crow.fly_height
+	for i in 120:
+		map.step(Vector2.ZERO, DT)
+	check(not crow.held and map.attack_marks.is_empty() and GameState.heart_units["fernanda"] == GameState.max_units(), "bare-handed a crow in view just flies by")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	map = await _animals_map(100)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["crow"]["dive_chance"] = 1.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	var skewer_uid := GameState.tools.add("eomuk_kkochi")
+	GameState.tools.equip(skewer_uid)
+	crow = _spawn_kind(map, "keunburikkamagwi")
+	_pd_put(crow, Vector2(52.0, -7.0), false)
+	crow.altitude = crow.fly_height
+	map.step(Vector2.ZERO, DT)
+	check(map.predators.phase_of(crow) == "telegraph" and map.attack_marks.size() == 1, "with the skewer equipped a crow coming into view dives: the red mark appears")
+	var brolly := GameState.tools.add("usan")
+	GameState.tools.equip(brolly)  # swapped in time (R)
+	units_before = GameState.heart_units["fernanda"]
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	var brolly_state: Dictionary = GameState.tools.get_tool(brolly)
+	check(GameState.heart_units["fernanda"] == units_before and brolly_state["uses"] == 5, "우산 swapped in: the dive is blocked and spends 1 use (%s left)" % str(brolly_state.get("uses")))
+	check(map.predators.attack_count == 0, "(a crow dive is no clock attack)")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	map = await _animals_map(101)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.predators.config = map.predators.config.duplicate(true)
+	map.predators.config["hunt_chance"] = 0.0
+	map.predators.attacks = map.predators.attacks.duplicate(true)
+	map.predators.attacks["crow"]["dive_chance"] = 1.0
+	_put(map, map.player, 50.0, -5.0)
+	_put(map, map.partner, 53.0, -5.0)
+	GameState.tools.equip(GameState.tools.add("eomuk_kkochi"))
+	crow = _spawn_kind(map, "keunburikkamagwi")
+	_pd_put(crow, Vector2(52.0, -7.0), false)
+	crow.altitude = crow.fly_height
+	map.step(Vector2.ZERO, DT)
+	steps = 0
+	while map.attack_marks.size() > 0 and steps < 400:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	lost = GameState.max_units() - int(GameState.heart_units["fernanda"])
+	check(lost >= 1 and lost <= 3 and not GameState.is_downed("fernanda"), "an unblocked dive costs 1..3 half hearts (%d)" % lost)
+	check(map._predator_context()["attacks_on"], "(attacks are on in play)")
+	map.begin_death_beat()
+	check(not map._predator_context()["attacks_on"], "...and off in the death beat")
+	map.free()
+	get_tree().paused = false
+
+	AnimalsScript.predators_enabled = false
+	AnimalsScript.tools_enabled = tools_before
+	_bare_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+	_section_done("test_predators9d_scene")

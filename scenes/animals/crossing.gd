@@ -65,6 +65,12 @@ class Walker extends RefCounted:
 	## 1 normally; more once it flees (a grab).
 	var speed_scale := 1.0
 	var fled := false
+	## Prompt 9d: a predator the hunt or attack logic (predators.gd) is steering holds its own place:
+	## the route stops moving, and position(), heading() and altitude come from here until
+	## Crossing.release() hands it back.
+	var held := false
+	var held_pos := Vector2.ZERO
+	var held_heading := Vector2(0.0, -1.0)
 
 	## Call once `route` is filled in.
 	func finalize() -> void:
@@ -86,6 +92,8 @@ class Walker extends RefCounted:
 
 	## Moves it for `delta` seconds: lingers first if it stands at its stop.
 	func advance(delta: float) -> void:
+		if held:
+			return
 		var left := delta
 		var stopped := stop_dist >= 0.0 and lingered < linger
 		if stopped and travelled >= stop_dist:
@@ -111,6 +119,8 @@ class Walker extends RefCounted:
 	## Where it is now over (x, z): on the route plus the sideways wobble (zero at both
 	## ends); pushed out of the lake if the wobble would enter it.
 	func position() -> Vector2:
+		if held:
+			return held_pos
 		var i := _segment()
 		var line := direction()
 		var side := Vector2(-line.y, line.x)
@@ -124,7 +134,7 @@ class Walker extends RefCounted:
 
 	## The way it faces: along its route (the wobble is too gentle to turn it).
 	func heading() -> Vector2:
-		return direction()
+		return held_heading if held else direction()
 
 	func is_done() -> bool:
 		return travelled >= length
@@ -489,7 +499,7 @@ func tick(delta: float) -> Array[Dictionary]:
 	elapsed += delta
 	for walker in alive.duplicate():
 		walker.advance(delta)
-		if walker.is_done():
+		if walker.is_done() and not walker.held:
 			if outside_view(walker.position(), walker):
 				alive.erase(walker)
 				exited += 1
@@ -538,15 +548,52 @@ func spawn() -> Walker:
 func flee(walker: Walker, speed_scale: float) -> void:
 	if walker.fled:
 		return
+	var here: Vector2 = walker.position()
+	walker.held = false  # (a predator that is grabbed in the middle of its hunt or attack)
 	walker.fled = true
 	walker.speed_scale = speed_scale
-	_head_out(walker)
+	if bool(walker.kind["flies"]):
+		walker.altitude = walker.fly_height
+	_head_out(walker, here)
+
+
+## `point` pushed out of the lake's steering ring (for a ground animal that is being steered by
+## hand, a hunt or a charge; they never enter the water).
+func keep_out_lake(point: Vector2) -> Vector2:
+	var offset := point - lake_center
+	var radius := _steer_radius()
+	if offset.length() >= radius:
+		return point
+	return lake_center + (offset.normalized() if offset.length() > 0.000001 else Vector2(0.0, -1.0)) * radius
+
+
+## Takes the animal off the map at once (a kill): no exit event is made for it. False if it is
+## not on the map.
+func remove(walker: Walker) -> bool:
+	if not alive.has(walker):
+		return false
+	alive.erase(walker)
+	exited += 1
+	return true
+
+
+## Puts a held walker (see Walker.held) on its own again: it heads for the nearest way out from
+## where it stands, at `speed_scale` times its speed (a flee). Draws no random numbers.
+func release(walker: Walker, speed_scale: float = 1.0) -> void:
+	var here: Vector2 = walker.position()
+	walker.held = false
+	walker.speed_scale = speed_scale
+	if speed_scale != 1.0:
+		walker.fled = true
+	if bool(walker.kind["flies"]):
+		walker.altitude = walker.fly_height
+	_head_out(walker, here)
 
 
 ## Replans the animal's way out from where it is: to the nearest point outside the footprint
 ## (outside by offscreen_m), straight for a flyer or a duck, round the lake for the rest.
-func _head_out(walker: Walker) -> void:
-	var here := walker.position()
+func _head_out(walker: Walker, from = null) -> void:
+	var here: Vector2 = walker.position() if from == null else from
 	var out_point := Vector2.ZERO
 	var out_side := "west"
 	var best := INF

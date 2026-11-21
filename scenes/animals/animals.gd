@@ -49,6 +49,9 @@ const ToolPickup := preload("res://scenes/animals/tool_pickup.gd")
 const ToolHud := preload("res://scenes/animals/tool_hud.gd")
 const HintLetters := preload("res://scenes/animals/hint_letters.gd")
 const HintLetterHud := preload("res://scenes/animals/hint_letter_hud.gd")
+const Predators := preload("res://scenes/animals/predators.gd")
+const KillGore := preload("res://scenes/animals/kill_gore.gd")
+const AttackMark := preload("res://scenes/animals/attack_mark.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
 ## A bare-hand grab hurts (and is made by) the traveler being controlled: Fernanda until she is
@@ -61,6 +64,7 @@ const SALT_PICKUPS := 4
 const SALT_REWARDS := 5
 const SALT_TOOLS := 6          # where the tools lie (Prompt 9c)
 const SALT_TOOL_REWARDS := 7   # the tool a met need drops
+const SALT_PREDATORS := 8      # hunts, attacks and their damage rolls (Prompt 9d)
 
 const GROUND_STEP := 1.0   # metres between ground mesh vertices along x
 
@@ -73,6 +77,10 @@ static var tools_enabled := true
 ## Set by tests only: false stops the hint letters from ever opening (the clock never runs), as
 ## before Prompt 9c-iii; the long-running older sections would otherwise be paused by one.
 static var hints_enabled := true
+
+## False: the predators neither hunt nor attack (the sections written before Prompt 9d; the 9d
+## section turns it on).
+static var predators_enabled := true
 
 var config: Dictionary = {}
 var stage_width := 0.0
@@ -135,6 +143,10 @@ var hint_ending: Dictionary = {}
 ## Prompt 9c. The tool HUD (bottom left), the roll of the tool a met need drops, the tool grab
 ## in its wind-up ({} when none: {walker, left, def}) and how the last one ended.
 var tool_hud: CanvasLayer
+## Prompt 9d: the predators' logic, and the attack marks on screen (walker id -> AttackMark).
+var predators
+var attack_marks: Dictionary = {}
+var kill_gores := 0
 var tool_rng := RandomNumberGenerator.new()
 var tool_pending: Dictionary = {}
 var last_tool_result: Dictionary = {}
@@ -219,6 +231,7 @@ func _ready() -> void:
 	backpack_hud.notebook_open_handler = open_notebook
 	backpack_hud.close_requested.connect(close_backpack)
 	crossing = Crossing.new(config, crossing_seed)
+	predators = Predators.new(config, crossing, DecoyPlacement.derive_seed(crossing_seed, SALT_PREDATORS))
 	_build_needs(ui)
 	tool_hud = ToolHud.new()
 	add_child(tool_hud)
@@ -348,10 +361,99 @@ func _tick_animals(delta: float) -> void:
 			_add_animal(event["walker"])
 		else:
 			_remove_animal(event["walker"])
+	if predators_enabled:
+		_tick_predators(delta)
 	for walker in animal_nodes:
 		_pose(walker)
 		if walker_slot.has(walker):
 			picking.set_spot(walker_slot[walker], walker.position())
+
+
+# ---- Predators (Prompt 9d) ----
+
+## The context the predators' logic needs each tick: who stands where, the equipped tool, and
+## whether the attacks may run (not in the spelling view, the death beat or a bear run).
+func _predator_context() -> Dictionary:
+	var standing := {}
+	for id in travelers:
+		if not GameState.is_downed(id):
+			standing[id] = _flat_of(travelers[id])
+	var held: Dictionary = GameState.tools.equipped()
+	var lure := not held.is_empty() and String(held["id"]) == String(config["attacks"]["crow"]["lure_item"])
+	return {
+		"standing": standing,
+		"controlled": GameState.controlled,
+		"equipped": {} if held.is_empty() else Content.item(String(held["id"])),
+		"lure": lure,
+		"attacks_on": not restarting and _dim == null and not spelling_hud.is_open() and not discovery_hud.word_select.is_open() and not bear.is_active()}
+
+
+func _tick_predators(delta: float) -> void:
+	for event in predators.tick(delta, _predator_context()):
+		match String(event["event"]):
+			"kill":
+				_on_kill(event)
+			"impact":
+				_on_attack_impact(event)
+	_sync_marks()
+
+
+## A predator caught its prey: the prey and its letter are gone (the letter supply is never used
+## up, so the letter is simply back in the pool), and the gore plays once.
+func _on_kill(event: Dictionary) -> void:
+	var prey = event["prey"]
+	if animal_nodes.has(prey):
+		_remove_animal(prey)
+	var at: Vector2 = event["at"]
+	var ground := terrain.height_at(at.x) + (float(config["lake"]["water_y"]) if prey.habitat == "lake" else 0.0)
+	var node := KillGore.new()
+	add_child(node)
+	kill_gores += 1
+	node.setup(gore, config["predators"]["gore"], Vector3(at.x, ground, at.y), float(prey.kind["size"][1]) * 0.6 + float(event["altitude"]), terrain.height_at, crossing_seed + kill_gores)
+
+
+## An attack landed (or missed): a block spends the tool, a hit hurts (or downs) the traveler.
+func _on_attack_impact(event: Dictionary) -> void:
+	var id := String(event["traveler"])
+	var attacker = event["predator"]
+	if event["blocked"]:
+		var held: Dictionary = GameState.tools.equipped()
+		if not held.is_empty():
+			var name_ko := String(Content.item(String(held["id"]))["name_ko"])
+			_spend_tool(held, int(event["cost"]), "broke!")
+			FloatLabel.make(self, "%s blocked!" % name_ko, travelers[id].global_position + Vector3(0.0, float_label_height, 0.0), float_label_config)
+		return
+	if not event["hit"]:
+		return
+	var units: int = int(GameState.heart_units[id]) if event["down"] else int(event["damage"])
+	if bool(attacker.kind.get("predator", false)) and id == GameState.controlled:
+		var glove: Dictionary = equipped_gloves()
+		if not glove.is_empty():  # a predator that hits shreds the rubber gloves
+			_lose_tool(glove, "shredded!", true)
+	var lethal := GameState.damage_units(id, units, "predator")
+	HitFx.hit(self, travelers[id], gore)
+	if lethal:
+		begin_death_beat()
+
+
+## Keeps one mark node per telegraphing or charging attacker; the rest are freed.
+func _sync_marks() -> void:
+	var wanted := {}
+	for entry in predators.marks():
+		var id: int = entry["walker"].id
+		wanted[id] = true
+		var mark = attack_marks.get(id)
+		if mark == null:
+			mark = AttackMark.new()
+			add_child(mark)
+			mark.setup(config["attacks"]["mark"], float(config["attacks"]["hit_radius_m"]), terrain.height_at)
+			mark.place(entry["point"])
+			attack_marks[id] = mark
+		mark.set_progress(float(entry["progress"]))
+	for id in attack_marks.keys():
+		if not wanted.has(id):
+			attack_marks[id].queue_free()
+			attack_marks.erase(id)
 
 
 func _add_animal(walker) -> void:

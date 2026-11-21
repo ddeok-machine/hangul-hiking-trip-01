@@ -611,6 +611,36 @@
           "_en": "To whoever ate the cucumber in the fridge. It's my cucumber. There were three cucumbers. Now there is one. I even wrote my name on the cucumber. Give the cucumber back. The cucumber knows."}
       }
     },
+    "predators": {
+      "_note": "Prompt 9d: the predators hunt the animals (scenes/animals/predators.gd). A live predator rolls hunt_chance once when it reaches its linger spot (the eagle, which does not linger, when it first comes into view). On a yes it picks the nearest live prey (the kind ids in its 'prey' list, not one already running off) within hunt_radius_m and chases it at chase_speed_mult times its own speed while the prey flees at flee_speed_mult; it catches it within catch_radius_m. The eagle dives from fly_height, coming down over the last dive_m. A catch removes the prey (its letter is simply gone: the letter supply is untouched), plays the kill gore (see 'gore'), and the predator stays eat_s at the kill, then leaves. It gives up after chase_max_s. Each predator entry: 'prey' (kind ids), 'charge_speed' (m/s of its attack charge or dive), 'damage_max' (a hit that does not down rolls 1..damage_max half hearts). Placeholders.",
+      "hunt_chance": 0.5,
+      "hunt_radius_m": 18.0,
+      "chase_speed_mult": 1.8,
+      "flee_speed_mult": 1.5,
+      "catch_radius_m": 0.7,
+      "eat_s": 6.0,
+      "chase_max_s": 12.0,
+      "dive_m": 6.0,
+      "gore": {"_note": "The kill: a blood burst of 'blood_strength' x the normal gore on the prey, 'chunks_min'..'chunks_max' small chunks (box edge 'chunk_size_min'..'chunk_size_max' m) thrown up at 'chunk_speed_min'..'chunk_speed_max' m/s sideways and 'chunk_lift_min'..'chunk_lift_max' m/s up under 'gravity', tumbling until they land and settle, and a flat ground splat of 'splat_radius' m that fades over 'splat_fade_s' seconds (the chunks fade with it). Colours r, g, b.", "blood_strength": 3.0, "chunks_min": 4, "chunks_max": 6, "chunk_size_min": 0.1, "chunk_size_max": 0.22, "chunk_speed_min": 1.5, "chunk_speed_max": 4.0, "chunk_lift_min": 3.0, "chunk_lift_max": 6.0, "gravity": 16.0, "chunk_color": [0.4, 0.07, 0.05], "splat_radius": 0.9, "splat_color": [0.28, 0.02, 0.03], "splat_alpha": 0.9, "splat_fade_s": 30.0},
+      "deulgae": {"prey": ["noru", "goraeni", "saseum", "osori"], "charge_speed": 9.0, "damage_max": 4},
+      "meotdwaeji": {"prey": ["noru", "bibaribaem"], "charge_speed": 8.0, "damage_max": 5},
+      "geomdokseuri": {"prey": ["ori", "jejujokjebi", "bibaribaem", "goraeni"], "charge_speed": 13.0, "damage_max": 4}
+    },
+    "attacks": {
+      "_note": "Prompt 9d: predators attack the travelers (scenes/animals/predators.gd). One scene-wide clock draws a gap of gap_min_s..gap_max_s seconds; once it has run out the attack waits for a predator within radius_m of a standing traveler (never a downed one), then the predator stops and a red '!' and a shrinking ring mark the traveler's spot for telegraph_s seconds (mark: the ring starts mark.ring_start_m wide and shrinks to hit_radius_m). It then charges (the eagle dives) at that spot at its charge_speed (giving up after charge_max_s). If the target is within hit_radius_m of the spot at impact it is hit: with chance down_chance it is downed, else it takes 1..damage_max half hearts (predators.<kind>.damage_max); a traveler out of the ring is missed. Afterwards the predator flees off screen at flee_speed_mult times its speed. A block (items.json block_kind / block_cost on the equipped tool) stops a hit with no damage and knocks the attacker back knockback_m. 'crow': with 'lure_item' (the skewer, which draws crows and dogs) equipped by the controlled traveler, each crow of kind 'kind' that comes into view rolls dive_chance to dive at them (same telegraph and dodge, 1..damage_max half hearts, no down roll, charges at charge_speed), and the attack clock runs lure_clock_mult times faster. Placeholders.",
+      "gap_min_s": 150.0,
+      "gap_max_s": 210.0,
+      "radius_m": 14.0,
+      "telegraph_s": 1.2,
+      "hit_radius_m": 1.0,
+      "down_chance": 0.25,
+      "charge_max_s": 4.0,
+      "flee_speed_mult": 2.5,
+      "knockback_m": 2.5,
+      "lure_clock_mult": 1.5,
+      "crow": {"kind": "keunburikkamagwi", "lure_item": "eomuk_kkochi", "dive_chance": 0.5, "damage_max": 3, "charge_speed": 10.0},
+      "mark": {"ring_start_m": 2.6, "color": [1.0, 0.12, 0.1], "alpha": 0.8, "text": "!", "font_size": 110, "pixel_size": 0.012, "height": 2.4}
+    },
     "spawn": {"interval_min_s": 2.4, "interval_max_s": 5.4, "start_cap": 4, "peak_cap": 10, "ramp_seconds": 240, "min_cap": 3, "target_samples": 24, "first_spawn_s": 1.0},
     "linger": {"min_s": 4.0, "max_s": 8.0, "duck_waypoints_min": 2, "duck_waypoints_max": 3},
     "path": {"wobble_amplitude_m": 0.8, "wobble_wavelength_m": 10.0, "fly_height": 4.0},
