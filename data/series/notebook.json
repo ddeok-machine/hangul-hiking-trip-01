@@ -25,6 +25,15 @@
   "empty_font_size": 22,
   "line_spacing": 3,
   "scroll_step": 56,
+  "styles": {
+    "handwritten": {
+      "_note": "A note with 'style': 'handwritten' draws its lines from 'styled_from_line' (0-based) on in this look: another ink colour, a slant (skew, the font's shear), a larger size (font_scale) and a lower alpha, as if smudged. The lines before it look as every other note does.",
+      "color": [0.12, 0.2, 0.52],
+      "alpha": 0.72,
+      "skew": -0.22,
+      "font_scale": 1.12
+    }
+  },
   "arrow_previous": "◀",
   "arrow_next": "▶",
   "arrow_font_size": 26,

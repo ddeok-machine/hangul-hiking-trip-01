@@ -357,6 +357,61 @@
       "size": [1.4, 4.25, 2.6], "color": [0.28, 0.17, 0.09], "speed_mps": 11.0, "entry_offscreen_m": 3.0,
       "reach_m": 1.6, "burst_strength": 5.0, "kill_beat_s": 0.8
     },
+    "scene_timer": {
+      "_note": "Prompt 9e. The hidden scene timer (never shown). At scene start a duration is drawn (seeded by the scene's seed) between min_s and max_s seconds. It runs while the scene really plays and stops while the pause menu, the backpack, the spelling view or a hint letter is up, and during the death beat; meeting all the needs stops it for good. warn1_s seconds before the end: a faint camera shake (shake: amplitude in m, seconds, hz) and a distant low roar, repeating every repeat_s seconds. warn2_s before the end: a huge dark shadow sweeps along one screen edge (shadow: seconds to cross, thickness = share of the screen it reaches in, alpha, rgb) and the roar is louder. At 0 with needs unfinished the bear is sent for the controlled traveler, then the other (downed ones too), then the death beat. The roar is made in code (scenes/animals/bear_roar.gd): low detuned tones (hz) with their harmonics, a vibrato, and a growl wobble (growl_hz, growl_depth); 'distant' and 'loud' are the volumes in dB and how much the high end is cut (a share 0..1 of the one-pole filter, lower = duller). Placeholders.",
+      "min_s": 360, "max_s": 720,
+      "warn1_s": 120, "warn2_s": 30, "repeat_s": 30,
+      "shake": {"amplitude_m": 0.12, "seconds": 1.5, "hz": 22.0},
+      "shadow": {"seconds": 4.0, "thickness": 0.4, "alpha": 0.88, "color": [0.02, 0.01, 0.01]},
+      "roar": {"seconds": 2.6, "hz": [47.0, 50.5, 70.0], "growl_hz": 17.0, "growl_depth": 0.55, "distant_db": -24.0, "loud_db": -8.0, "distant_cut": 0.12, "loud_cut": 0.35}
+    },
+    "cairn": {
+      "_note": "Prompt 9e. The 돌탑 (stone cairn) on the far (top) edge, horizontally centred, 'inset_m' metres inside the far edge: 'stones' flattened grey stones stacked into a tower of height_m, narrowing from base_radius to top_radius, with a solid base_radius collider. Props keep clear_m from it and from the trail. Behind it (toward the far edge) a lighter trail strip, trail.half_width_m either side of the centre, is blended into the ground texture (blend_m soft edge; its colour must not be brighter than ground.max_luma). Until the last need is met an invisible wall runs along the cairn's line (travelers cannot walk beyond z = the cairn's z); afterwards the exit trigger lies on the trail behind the cairn: trigger_half_width_m either side, from the far edge to trigger_gap_m behind the cairn's base. Placeholders.",
+      "inset_m": 4.0, "height_m": 2.2, "stones": 7, "base_radius": 0.75, "top_radius": 0.28, "clear_m": 3.0,
+      "colors": [[0.46, 0.46, 0.48], [0.38, 0.38, 0.4], [0.52, 0.51, 0.5], [0.42, 0.43, 0.44]],
+      "trail": {"half_width_m": 2.2, "color": "#ABA07F", "blend_m": 0.8},
+      "trigger_half_width_m": 2.0, "trigger_gap_m": 0.6
+    },
+    "ending": {
+      "_note": "Prompt 9e. The animal scene's end, in the shape of foraging.ending (see its note): when the last need is met the exit note (item note.item) flies in 'note_delay_s' later over 'flight_s' seconds and lands range_min..range_max m from the controlled traveler on ground at least clear_edge inside the walk limits, clear_pile from every bottle or tool lying about, clear_cairn from the cairn and clear_lake from the lake (tries = random draws before the ring is scanned). It can be picked into the 수첩 (pickup_text floats up). Entering the exit trigger (animals.cairn) with nobody downed fades the screen to black over fade_s seconds, stores hearts, backpack and tools as GameState's pending bank for 'next', and loads the scene 'scene_paths' maps it to; one that is missing holds on black with hold_text. 'to_be_continued' styles that placeholder scene (res://scenes/common/to_be_continued.tscn): a line and a sub line on black, fading in over fade_in_s, any key or click returns to the main scene after grace_s. Placeholders.",
+      "note_delay_s": 1.5,
+      "flight_s": 5.0,
+      "fade_s": 1.0,
+      "next": "cutscene_animals_to_baengnokdam",
+      "scene_paths": {"cutscene_animals_to_baengnokdam": "res://scenes/common/to_be_continued.tscn"},
+      "hold_text": "next: %s (not built)",
+      "hold_font_size": 18,
+      "hold_color": [0.62, 0.62, 0.66],
+      "note": {
+        "item": "hallasan_exit_2",
+        "pickup_text": "+1 note",
+        "size": [0.45, 0.6],
+        "color": [0.92, 0.9, 0.84],
+        "range_min": 1.5,
+        "range_max": 3.0,
+        "clear_edge": 1.0,
+        "clear_pile": 1.0,
+        "clear_cairn": 3.0,
+        "clear_lake": 1.0,
+        "tries": 40,
+        "start_margin": 3.0,
+        "start_height": 7.0,
+        "sway": 1.2,
+        "sway_hz": 0.9,
+        "spin_deg_s": 260.0,
+        "bob": 0.3,
+        "bob_hz": 2.2,
+        "flutter_deg": 40.0,
+        "rest_lift": 0.03,
+        "retarget_min_s": 0.6
+      },
+      "to_be_continued": {
+        "line": "To be continued…", "sub": "백록담",
+        "fade_in_s": 2.0, "grace_s": 0.6,
+        "line_size": 64, "sub_size": 40, "gap_px": 24,
+        "color": [0.95, 0.95, 0.92], "sub_color": [0.7, 0.8, 0.82]
+      }
+    },
     "traveler_colors": {"nestor": [0.36, 0.45, 0.65], "fernanda": [0.95, 0.55, 0.70]},
     "camera": {"pitch_deg": 28.0, "distance": 30.0, "size": 9.0, "follow_rate": 6.0, "lead": 4.0, "far_overshoot_m": 1.5},
     "backdrop_color": [0.62, 0.72, 0.8],

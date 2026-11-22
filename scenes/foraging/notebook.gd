@@ -81,3 +81,21 @@ func current_id(items: Array) -> String:
 func page_text(items: Array) -> String:
 	var id := current_id(items)
 	return String(Content.notes[id]["text"]) if Content.notes.has(id) else ""
+
+
+## The look of the shown page's last lines, {"style": "handwritten", "from_line": 12} (0-based),
+## or {} for a plain page (most notes; data/notes/*.json 'style' and 'styled_from_line').
+func page_style(items: Array) -> Dictionary:
+	var id := current_id(items)
+	if id == "" or not Content.notes.has(id) or not Content.notes[id].has("style"):
+		return {}
+	return {"style": String(Content.notes[id]["style"]), "from_line": int(Content.notes[id]["styled_from_line"])}
+
+
+## A text split at line `from_line` (0-based): [the lines before it, the lines from it on], each
+## joined by line breaks. A `from_line` outside the text leaves it all in the first part.
+static func split_at_line(text: String, from_line: int) -> Array[String]:
+	var lines := text.split("\n")
+	if from_line < 0 or from_line >= lines.size():
+		return [text, ""]
+	return ["\n".join(lines.slice(0, from_line)), "\n".join(lines.slice(from_line))]

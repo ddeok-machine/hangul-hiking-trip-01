@@ -169,11 +169,15 @@ const EXPECTED_SECTIONS: Array[String] = [
 	"test_predators9d_data",
 	"test_predators9d_logic",
 	"test_predators9d_scene",
+	"test_exit9e_data",
+	"test_exit9e_logic",
+	"test_exit9e_scene",
+	"test_exit9e_placeholder",
 ]
 
 ## The run fails if fewer checks than this ran. After adding tests, raise it to
 ## the printed total minus a small margin (currently 6).
-const MIN_CHECKS := 4398
+const MIN_CHECKS := 4546
 
 
 func check(condition: bool, label: String) -> void:
@@ -196,6 +200,8 @@ func _ready() -> void:
 	AnimalsScript.tools_enabled = false  # the animal sections before Prompt 9c expect no tools in the scene; the 9c section turns them on
 	AnimalsScript.hints_enabled = false  # nor a hint letter pausing a long run; the 9c-iii section turns them on
 	AnimalsScript.predators_enabled = false  # nor predators hunting and attacking; the 9d section turns them on
+	AnimalsScript.timer_enabled = false  # nor the hidden scene timer's bear; the 9e section turns it on
+	AnimalsScript.exit_enabled = false  # nor a cairn and a wall before it; the 9e section turns them on
 	print("== Hangul engine ==")
 	test_compose()
 	print("== Curriculum ==")
@@ -396,6 +402,11 @@ func _ready() -> void:
 	test_predators9d_data()
 	test_predators9d_logic()
 	await test_predators9d_scene()
+	print("== Scene timer, bear, Exit Note 2, cairn and exit (Prompt 9e) ==")
+	test_exit9e_data()
+	test_exit9e_logic()
+	await test_exit9e_scene()
+	await test_exit9e_placeholder()
 	for section in EXPECTED_SECTIONS:
 		if not finished.has(section):
 			check(false, "section did not run to its end: " + section)
@@ -5340,8 +5351,8 @@ const KO_FONT_FILE := "NotoSansKR-VariableFont_wght.ttf"
 
 func test_items_data() -> void:
 	var file: Array = Content.load_json(Content.ITEMS_PATH).get("items", [])
-	check(file.size() == 21 and Content.items.size() == 22, "items.json lists twenty-one items (the nine tools of Prompt 9c among them) and all of them loaded, plus the one note registered from data/notes")
-	check(Content.items.keys() == ["ssanghwatang", "gongjindan", "spelling_hint", "slow_time_charm", "ddeok", "plant_ma", "plant_meoru", "plant_minari", "plant_gosari", "plant_gobi", "plant_siromi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap", "sucheop", "hallasan_exit_sumin"], "the ids load in file order, the registered notes after them")
+	check(file.size() == 21 and Content.items.size() == 23, "items.json lists twenty-one items (the nine tools of Prompt 9c among them) and all of them loaded, plus the two notes registered from data/notes")
+	check(Content.items.keys() == ["ssanghwatang", "gongjindan", "spelling_hint", "slow_time_charm", "ddeok", "plant_ma", "plant_meoru", "plant_minari", "plant_gosari", "plant_gobi", "plant_siromi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap", "sucheop", "hallasan_exit_sumin", "hallasan_exit_2"], "the ids load in file order, the registered notes after them")
 	for id in Content.items:
 		var item: Dictionary = Content.item(id)
 		check(item["id"] == id and Content.ITEM_KINDS.has(item["kind"]), "%s has its id and a valid kind" % id)
@@ -8602,13 +8613,13 @@ func test_plant_items_data() -> void:
 	check(GameState.inventory.snapshot() == {"sucheop": 1}, "and the kit is in the scene-start snapshot")
 	# Writers.
 	var writers: Array = Content.load_json(Content.NOTE_WRITERS_PATH)["writers"]
-	check(writers.map(func(w): return w["id"]) == ["old_lady", "dong_cheolsu", "song_sumin", "bong_minsu"], "note_writers.json has the four writers")
-	check(writers.map(func(w): return w["name_ko"]) == ["", "동철수", "송수민", "봉민수"], "with their Korean names (the old lady has none)")
+	check(writers.map(func(w): return w["id"]) == ["old_lady", "dong_cheolsu", "song_sumin", "bong_minsu", "unknown"], "note_writers.json has the four writers and 'unknown' (Prompt 9e)")
+	check(writers.map(func(w): return w["name_ko"]) == ["", "동철수", "송수민", "봉민수", ""], "with their Korean names (the old lady has none)")
 	check(writers[0]["note"] == "The quiet 무당. Never called \"grandma\" in game text." and writers[1]["note"] == "The over-equipped 등산 아저씨." and writers[2]["note"] == "University student, lost on an MT hike." and writers[3]["note"] == "University student, lost on an MT hike.", "and their notes")
-	check(Content.note_writers.size() == 4 and Content.note_writers.has("song_sumin"), "the writers are loaded into Content")
+	check(Content.note_writers.size() == 5 and Content.note_writers.has("song_sumin") and Content.note_writers.has("unknown"), "the writers are loaded into Content")
 	# The exit note.
 	var raw: Array = Content.load_json("res://data/notes/hallasan.json")["notes"]
-	check(raw.size() == 1 and raw[0]["id"] == "hallasan_exit_sumin" and raw[0]["writer"] == "song_sumin", "data/notes/hallasan.json has the one exit note, by song_sumin")
+	check(raw.size() == 2 and raw[0]["id"] == "hallasan_exit_sumin" and raw[0]["writer"] == "song_sumin" and raw[1]["id"] == "hallasan_exit_2", "data/notes/hallasan.json has the foraging exit note, by song_sumin, then Exit Note 2 (Prompt 9e)")
 	check(raw[0]["text"] == EXIT_NOTE_TEXT, "the exit note's text in data matches the brief exactly, line breaks and blank lines included")
 	check(EXIT_NOTE_TEXT.count("\n\n") == 5 and EXIT_NOTE_TEXT.split("\n").size() == 21, "(sanity) it has 21 lines and 5 blank lines between its 6 paragraphs")
 	check(Content.notes.has("hallasan_exit_sumin") and Content.notes["hallasan_exit_sumin"]["text"] == EXIT_NOTE_TEXT, "Content registers the note")
@@ -9142,10 +9153,10 @@ func test_debug_notes() -> void:
 	Foraging.debug_notes_override = true
 	map = await _kit_map(false)
 	var viewport := map.get_viewport()
-	check(GameState.inventory.snapshot() == {"sucheop": 1, "hallasan_exit_sumin": 1}, "with --debug-notes the exit note is in the backpack at scene start")
+	check(GameState.inventory.snapshot() == {"sucheop": 1, "hallasan_exit_sumin": 1, "hallasan_exit_2": 1}, "with --debug-notes both exit notes are in the backpack at scene start")
 	_tap(viewport, KEY_Q)
 	await _settle_layout()
-	check(map.backpack_hud.notebook_text() == EXIT_NOTE_TEXT, "Q shows 수민's note, word for word")
+	check(map.backpack_hud.notebook_text() == String(Content.notes["hallasan_exit_2"]["text"]), "Q shows the newest note (Exit Note 2), word for word")
 	_tap(viewport, KEY_Q)
 	_tap(viewport, KEY_TAB)
 	await _settle_layout()
@@ -10545,6 +10556,8 @@ func test_animals_ground() -> void:
 		var bright := true
 		var distinct := {}
 		for p in _interior_points(zone, cfg, 500):
+			if CairnScript.trail_weight(cfg, p.x, p.y) > 0.0:  # (the lighter trail of Prompt 9e is not a palette colour)
+				continue
 			var c := GroundScript.color_at(p.x, p.y, cfg, 7)
 			var e := 0.002
 			within = within and c.r >= low.r - e and c.r <= high.r + e and c.g >= low.g - e and c.g <= high.g + e and c.b >= low.b - e and c.b <= high.b + e
@@ -15269,3 +15282,554 @@ func test_predators9d_scene() -> void:
 	get_window().size = window_before
 	await get_tree().process_frame
 	_section_done("test_predators9d_scene")
+
+
+# ---- The scene timer, the bear, Exit Note 2, the cairn and the exit (Prompt 9e) ----
+
+const EXIT2_DOC := "res://docs/production/hallasan-exit-note-2-v0.1.md"
+const EXIT2_ID := "hallasan_exit_2"
+const BEAST_ID := "cutscene_animals_to_baengnokdam"
+const SceneTimerScript := preload("res://scenes/animals/scene_timer.gd")
+const BearRoarScript := preload("res://scenes/animals/bear_roar.gd")
+const CairnScript := preload("res://scenes/animals/cairn.gd")
+const ToBeContinuedScript := preload("res://scenes/common/to_be_continued.gd")
+
+
+## The text of the first code block of the Exit Note 2 doc (its section 2), line breaks as LF.
+func _exit2_doc_text() -> String:
+	var doc := FileAccess.get_file_as_string(EXIT2_DOC).replace("\r\n", "\n")
+	var start := doc.find("```\n")
+	var end := doc.find("\n```", start + 4)
+	if start < 0 or end < 0:
+		return ""
+	return doc.substr(start + 4, end - (start + 4))
+
+
+## Meets all six needs of an animal map (items handed over, words spelled), through the real path.
+func _finish_animal_needs(map: Node3D) -> void:
+	for kind_id in _animals_config()["needs"]["table"].keys():
+		var e: Dictionary = map.needs.discover(kind_id)
+		if not e.is_empty():
+			map._on_need_discovered(e)
+	for e in map.needs.entries.duplicate():
+		if map.needs.done.has(e["id"]):
+			continue
+		if e["kind"] == "item":
+			GameState.inventory.add(e["item"])
+			map.give_item(e["id"])
+		else:
+			_spell_word(map, e["id"])
+	get_tree().paused = false
+
+
+func test_exit9e_data() -> void:
+	var cfg: Dictionary = _animals_config()
+	# The timer's data.
+	var timer: Dictionary = cfg["scene_timer"]
+	check(int(timer["min_s"]) == 360 and int(timer["max_s"]) == 720 and int(timer["warn1_s"]) == 120 and int(timer["warn2_s"]) == 30 and int(timer["repeat_s"]) == 30, "scene_timer: 360..720 s, warnings at 120 s and 30 s left, the roar every 30 s")
+	check(float(timer["shake"]["seconds"]) == 1.5 and float(timer["shake"]["amplitude_m"]) > 0.0 and float(timer["shake"]["amplitude_m"]) <= 0.3, "the shake lasts 1.5 s and is small")
+	check(float(timer["roar"]["loud_db"]) > float(timer["roar"]["distant_db"]), "the second roar is louder than the first")
+	# The note: word for word, from the doc.
+	var doc_text := _exit2_doc_text()
+	check(doc_text.begins_with("HALLASAN SUNRISE 산악회 — OCTOBER OUTING") and doc_text.ends_with("They're waiting for you."), "(sanity) the doc's code block was found (%d chars)" % doc_text.length())
+	check(Content.notes.has(EXIT2_ID) and Content.notes[EXIT2_ID]["text"] == doc_text, "hallasan_exit_2's text is the doc's section 2, word for word")
+	check(Content.notes[EXIT2_ID]["writer"] == "unknown" and Content.note_writers.has("unknown"), "its writer is 'unknown', which note_writers.json has")
+	check(Content.item(EXIT2_ID).get("kind") == "note", "Content registers it as an item of kind note")
+	var lines: PackedStringArray = doc_text.split("\n")
+	check(Content.notes[EXIT2_ID]["style"] == "handwritten" and lines[int(Content.notes[EXIT2_ID]["styled_from_line"])] == "(handwritten at the bottom, smudged)" and int(Content.notes[EXIT2_ID]["styled_from_line"]) == lines.size() - 2, "it is styled from '(handwritten at the bottom, smudged)', the last two lines")
+	check(not Content.notes["hallasan_exit_sumin"].has("style"), "수민's note has no style")
+	check(Content.note_problem({"id": "n9", "writer": "unknown", "text": "a\nb", "style": "handwritten", "styled_from_line": 2}, {}, {}, {"unknown": true}).contains("styled_from_line"), "a styled_from_line past the last line is rejected")
+	check(Content.note_problem({"id": "n9", "writer": "unknown", "text": "a\nb", "styled_from_line": 1}, {}, {}, {"unknown": true}).contains("no style"), "a styled_from_line with no style is rejected")
+	check(Content.note_problem({"id": "n9", "writer": "unknown", "text": "a\nb", "style": "handwritten", "styled_from_line": 1}, {}, {}, {"unknown": true}) == "", "a styled note passes")
+	var look: Dictionary = Content.notebook["styles"]["handwritten"]
+	check(Color(look["color"][0], look["color"][1], look["color"][2]) != Color(Content.notebook["page_text_color"][0], Content.notebook["page_text_color"][1], Content.notebook["page_text_color"][2]) and float(look["alpha"]) < 1.0 and float(look["skew"]) != 0.0 and float(look["font_scale"]) > 1.0, "the handwritten look differs from the page text: colour, a lower alpha, a slant and a bigger size")
+	# The ending's data.
+	var ending: Dictionary = cfg["ending"]
+	check(ending["next"] == BEAST_ID and ending["scene_paths"][BEAST_ID] == "res://scenes/common/to_be_continued.tscn", "animals.ending.next is the Baengnokdam cutscene, mapped to the placeholder scene")
+	check(ResourceLoader.exists(String(ending["scene_paths"][BEAST_ID])), "...which exists")
+	check(ending["note"]["item"] == EXIT2_ID and EndingScript.new(ending).scene_path(BEAST_ID) == "res://scenes/common/to_be_continued.tscn", "the exit note is hallasan_exit_2, and the Ending rules resolve the scene")
+	# The cairn's geometry.
+	var cairn: Dictionary = cfg["cairn"]
+	var width := float(cfg["stage"]["width"])
+	var depth := float(cfg["stage"]["depth"])
+	var at: Vector2 = CairnScript.center(cfg)
+	check(is_equal_approx(at.x, width / 2.0) and at.y < -depth / 2.0 + 8.0 and at.y > -depth / 2.0, "the cairn is horizontally centred at the top edge (%s)" % str(at))
+	check(int(cairn["stones"]) >= 6 and int(cairn["stones"]) <= 8 and float(cairn["height_m"]) > 2.0 and float(cairn["height_m"]) < 2.4 and float(cairn["top_radius"]) < float(cairn["base_radius"]), "6-8 stones, about 2.2 m, narrowing upward")
+	check(float(cairn["clear_m"]) >= 3.0, "props keep 3 m clear")
+	var trigger: Rect2 = CairnScript.trigger_rect(cfg)
+	check(trigger.end.y <= at.y - float(cairn["base_radius"]) and trigger.position.y <= -depth / 2.0 + 0.001 and trigger.has_point(Vector2(at.x, -depth / 2.0 + 0.8)), "the exit trigger lies on the trail behind the cairn")
+	check(not trigger.has_point(at) and not trigger.has_point(Vector2(at.x, at.y + 2.0)), "...not at or in front of the cairn")
+	check(is_equal_approx(CairnScript.trail_weight(cfg, at.x, at.y - 2.0), 1.0) and CairnScript.trail_weight(cfg, at.x + 8.0, at.y - 2.0) == 0.0 and CairnScript.trail_weight(cfg, at.x, at.y + 4.0) == 0.0, "the trail weight is 1 on the strip behind the cairn and 0 beside it and in front of it")
+	var edge_weight := CairnScript.trail_weight(cfg, at.x + float(cairn["trail"]["half_width_m"]), at.y - 2.0)
+	check(edge_weight > 0.4 and edge_weight < 0.6, "...and 0.5 at the strip's edge (%.2f)" % edge_weight)
+	# The trail in the ground texture: lighter than the ground beside it, and under the luminance cap.
+	var trail_color := Color.html(String(cairn["trail"]["color"]))
+	check(trail_color.get_luminance() <= float(cfg["ground"]["max_luma"]), "the trail's colour is under the ground's luminance cap")
+	var on_strip := GroundScript.color_at(at.x, at.y - 2.0, cfg, 7)
+	var beside := GroundScript.color_at(at.x - 9.0, at.y - 2.0, cfg, 7)
+	check(on_strip.get_luminance() > beside.get_luminance() + 0.05, "the trail strip is lighter than the ground beside it (%.2f vs %.2f)" % [on_strip.get_luminance(), beside.get_luminance()])
+	check(on_strip.is_equal_approx(GroundScript.color_at(at.x, at.y - 2.0, cfg, 7)), "(and the ground is still seeded)")
+	# Props keep off it.
+	var clear := float(cairn["clear_m"])
+	var strip: Rect2 = CairnScript.trail_rect(cfg)
+	var worst := INF
+	var on_trail := 0
+	for seed_value in [1, 2, 3, 91]:
+		var placed: Dictionary = PropsScript.place(cfg, seed_value)
+		for type in placed:
+			for prop in placed[type]:
+				var spot: Vector2 = prop["pos"]
+				worst = minf(worst, spot.distance_to(at))
+				if strip.has_point(spot):
+					on_trail += 1
+	check(worst >= clear and on_trail == 0, "no prop within %.0f m of the cairn (nearest %.1f m) or on its trail (%d)" % [clear, worst, on_trail])
+	_section_done("test_exit9e_data")
+
+
+func test_exit9e_logic() -> void:
+	var timer: Dictionary = _animals_config()["scene_timer"]
+	# A seeded duration in range.
+	var seen := {}
+	var in_range := true
+	for seed_value in 200:
+		var t = SceneTimerScript.new(timer, seed_value)
+		in_range = in_range and t.duration >= 360.0 and t.duration <= 720.0 and t.left == t.duration
+		seen[roundi(t.duration)] = true
+		in_range = in_range and SceneTimerScript.EDGES.has(t.shadow_edge)
+	check(in_range and seen.size() > 100, "200 seeds: every duration is 360..720 s, they differ (%d distinct), the shadow edge is a screen edge" % seen.size())
+	check(SceneTimerScript.new(timer, 5).duration == SceneTimerScript.new(timer, 5).duration and SceneTimerScript.new(timer, 5).duration != SceneTimerScript.new(timer, 6).duration, "one seed is one duration")
+	# The marks and the events.
+	var marks: Array = SceneTimerScript.marks_for(timer, 400.0).map(func(m): return [m["at"], m["event"]])
+	check(marks == [[120.0, "warn1"], [90.0, "repeat"], [60.0, "repeat"], [30.0, "warn2"]], "the marks: 120 warn1, 90 and 60 repeat, 30 warn2 (%s)" % str(marks))
+	check(SceneTimerScript.marks_for(timer, 100.0).map(func(m): return m["event"]) == ["repeat", "repeat", "warn2"] or SceneTimerScript.marks_for(timer, 100.0).size() == 3, "a timer shorter than a mark skips it")
+	var t = SceneTimerScript.new(timer, 11)
+	var log: Array = []
+	var guard := 0
+	while t.is_active() and guard < 100000:
+		for event in t.tick(0.5, true):
+			log.append([event["event"], event["left"], event["loud"]])
+		guard += 1
+	check(log == [["warn1", 120.0, false], ["repeat", 90.0, false], ["repeat", 60.0, false], ["warn2", 30.0, true], ["timeout", 0.0, true]], "run out in half-second ticks: each event once, in order (%s)" % str(log))
+	check(t.left == 0.0 and t.fired and not t.is_active() and t.tick(5.0, true).is_empty(), "...then nothing more")
+	# A huge tick fires every mark it crossed, once.
+	t = SceneTimerScript.new(timer, 12)
+	var big: Array[Dictionary] = t.tick(t.duration - 10.0, true)
+	check(big.map(func(e): return e["event"]) == ["warn1", "repeat", "repeat", "warn2"], "one big tick fires the four warnings it crosses")
+	check(t.tick(11.0, true).map(func(e): return e["event"]) == ["timeout"], "...and the timeout once")
+	# Paused: nothing counts.
+	t = SceneTimerScript.new(timer, 13)
+	var before: float = t.left
+	check(t.tick(50.0, false).is_empty() and t.left == before, "not playing: the timer does not move")
+	# Stopped for good.
+	t.stop()
+	check(t.tick(1000.0, true).is_empty() and t.left == before and not t.is_active(), "stopped (the needs are met): it never fires")
+	# The roar.
+	var roar: Dictionary = timer["roar"]
+	var distant := BearRoarScript.samples(roar, float(roar["distant_cut"]))
+	var loud := BearRoarScript.samples(roar, float(roar["loud_cut"]))
+	var count := roundi(float(roar["seconds"]) * BearRoarScript.MIX_RATE)
+	check(distant.size() == count and loud.size() == count, "a roar is %.1f s of samples (%d)" % [float(roar["seconds"]), count])
+	var peak_d := 0.0
+	var peak_l := 0.0
+	var rough_d := 0.0
+	var rough_l := 0.0
+	for i in range(1, count):
+		peak_d = maxf(peak_d, absf(distant[i]))
+		peak_l = maxf(peak_l, absf(loud[i]))
+		rough_d += absf(distant[i] - distant[i - 1])
+		rough_l += absf(loud[i] - loud[i - 1])
+	check(is_equal_approx(peak_d, BearRoarScript.PEAK) and is_equal_approx(peak_l, BearRoarScript.PEAK), "both are scaled to the same peak")
+	check(rough_d < rough_l, "the distant roar is duller than the loud one (%.0f vs %.0f)" % [rough_d, rough_l])
+	check(loud[0] == 0.0 and absf(loud[count - 1]) < 0.05, "the roar swells from silence and dies away")
+	var stream: AudioStreamWAV = BearRoarScript.make(roar, true)
+	check(stream.data.size() == count * 2 and stream.mix_rate == BearRoarScript.MIX_RATE and stream.loop_mode == AudioStreamWAV.LOOP_DISABLED and BearRoarScript.make(roar, true) == stream and BearRoarScript.make(roar, false) != stream, "a stream is made in code, once per kind")
+	check(BearRoarScript.volume_db(roar, false) < BearRoarScript.volume_db(roar, true), "the loud one plays louder")
+	# The notebook's styled lines.
+	var parts := NotebookScript.split_at_line("a\nb\nc\nd", 2)
+	check(parts == ["a\nb", "c\nd"] and NotebookScript.split_at_line("a\nb", 5) == ["a\nb", ""] and NotebookScript.split_at_line("a\nb", -1) == ["a\nb", ""], "a note splits at its styled line (and not at a line that is not there)")
+	var book = NotebookScript.new()
+	check(book.page_style([{"id": EXIT2_ID, "count": 1}]) == {"style": "handwritten", "from_line": 12} and book.page_style([{"id": "hallasan_exit_sumin", "count": 1}]).is_empty() and book.page_style([]).is_empty(), "page_style: the schedule is handwritten from line 12, 수민's note and an empty book are plain")
+	_section_done("test_exit9e_logic")
+
+
+func test_exit9e_scene() -> void:
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	AnimalsScript.timer_enabled = true
+	AnimalsScript.exit_enabled = true
+	var cfg: Dictionary = _animals_config()
+	var timer_cfg: Dictionary = cfg["scene_timer"]
+	var viewport := get_viewport()
+
+	# ---- The timer: seeded, hidden, paused by menus, stopped by the death beat ----
+	GameState.new_hike()
+	var map: Node3D = await _animals_map(101)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	check(map.scene_timer != null and map.scene_timer.duration >= 360.0 and map.scene_timer.duration <= 720.0, "the scene draws a timer of 360..720 s (%.0f)" % map.scene_timer.duration)
+	var again: Node3D = await _animals_map(101)
+	check(is_equal_approx(again.scene_timer.duration, map.scene_timer.duration), "...from the seed: the same seed, the same duration")
+	again.free()
+	get_tree().paused = false
+	var shown := false
+	for node in _all_nodes(map):
+		if node is Label and String(node.text).contains(str(roundi(map.scene_timer.duration))):
+			shown = true
+	check(not shown, "the timer is never shown on screen")
+	map.scene_timer.left = 300.0
+	_run(map, 2.0)
+	check(is_equal_approx(map.scene_timer.left, 298.0), "it counts down while the scene plays (%.2f)" % map.scene_timer.left)
+	check(map.open_pause_menu() and get_tree().paused, "(setup) the pause menu is open")
+	_run(map, 5.0)
+	check(is_equal_approx(map.scene_timer.left, 298.0), "...the pause menu stops it")
+	map.pause_hud.choose(0)
+	_run(map, 1.0)
+	check(is_equal_approx(map.scene_timer.left, 297.0), "...resuming starts it again")
+	check(map.open_backpack() and get_tree().paused, "(setup) the backpack is open")
+	_run(map, 5.0)
+	check(is_equal_approx(map.scene_timer.left, 297.0), "the backpack stops it")
+	map.close_backpack()
+	check(map.open_hint("나무") and get_tree().paused, "(setup) a hint letter is open")
+	_run(map, 5.0)
+	check(is_equal_approx(map.scene_timer.left, 297.0), "a hint letter stops it")
+	map.hint_hud.close()
+	_run(map, 1.0)
+	check(is_equal_approx(map.scene_timer.left, 296.0), "...closing it starts it again")
+	map.begin_death_beat()
+	_run(map, 3.0)
+	check(is_equal_approx(map.scene_timer.left, 296.0), "the death beat stops it")
+	map.free()
+	get_tree().paused = false
+
+	# ---- The warnings, once each ----
+	GameState.new_hike()
+	map = await _animals_map(102)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	map.scene_timer.left = 125.0
+	var view_before: Rect2 = map.view_rect()
+	_run(map, 4.0, 0.25)  # 125 -> 121: nothing yet
+	check(map.roars.is_empty() and map.shake_left == 0.0 and not map.warning_fx.is_active(), "above 120 s nothing happens")
+	map.step(Vector2.ZERO, 1.2)  # -> 119.8
+	check(map.roars.size() == 1 and not map.roars[0]["loud"] and map.roar_player.playing and map.roar_player.volume_db == float(timer_cfg["roar"]["distant_db"]), "at 120 s left: one distant roar")
+	check(map.shake_left > 1.0 and not map.warning_fx.is_active(), "...and the shake starts, with no shadow yet")
+	var shook := 0.0
+	for i in 20:
+		map.step(Vector2.ZERO, DT)
+		shook = maxf(shook, map.shake_offset.length())
+	check(shook > 0.01 and shook <= float(timer_cfg["shake"]["amplitude_m"]) * 1.2, "the camera shakes a little (%.3f m)" % shook)
+	check(not is_zero_approx(map.camera.h_offset) or not is_zero_approx(map.camera.v_offset), "...through the camera's offset")
+	_run(map, 1.6)
+	check(map.shake_left == 0.0 and is_zero_approx(map.camera.h_offset) and is_zero_approx(map.camera.v_offset) and map.shake_offset == Vector2.ZERO, "the shake ends after about 1.5 s and the camera is still again")
+	check(map.view_rect().is_equal_approx(view_before) or map.view_rect().position.distance_to(view_before.position) < 40.0, "(the view is not left displaced)")
+	map.scene_timer.left = 91.0
+	_run(map, 2.0, 0.25)
+	check(map.roars.size() == 2 and map.roars[1]["left"] == 90.0 and not map.roars[1]["loud"], "it repeats at 90 s")
+	map.scene_timer.left = 61.0
+	_run(map, 2.0, 0.25)
+	check(map.roars.size() == 3 and map.roars[2]["left"] == 60.0, "...and at 60 s")
+	map.scene_timer.left = 31.0
+	_run(map, 2.0, 0.25)
+	check(map.roars.size() == 4 and map.roars[3]["loud"] and map.roars[3]["left"] == 30.0 and map.roar_player.volume_db == float(timer_cfg["roar"]["loud_db"]), "at 30 s left: the roar is louder")
+	check(map.warning_fx.is_active() and map.warning_fx.edge == map.scene_timer.shadow_edge, "...and a shadow sweeps along one screen edge (%s)" % map.warning_fx.edge)
+	var shadow_rects: Array[Rect2] = []
+	for i in 4:
+		_run(map, 0.5, 0.25)
+		shadow_rects.append(map.warning_fx.rect())
+	check(map.warning_fx.is_active() and shadow_rects[0] != shadow_rects[3], "...it moves along the edge")
+	var screen := Rect2(Vector2.ZERO, map.get_viewport().get_visible_rect().size)
+	check(shadow_rects[2].size.x * shadow_rects[2].size.y > screen.size.x * screen.size.y * 0.1 and (shadow_rects[2].get_center().y == 0.0 or shadow_rects[2].get_center().y == screen.size.y or shadow_rects[2].get_center().x == 0.0 or shadow_rects[2].get_center().x == screen.size.x), "...it is huge, its middle on the screen's edge")
+	_run(map, 4.0, 0.25)
+	check(not map.warning_fx.is_active() and map.roars.size() == 4, "the sweep ends, and no further roar came")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 0: the bear for the controlled traveler, then the other ----
+	GameState.new_hike()
+	map = await _animals_map(103)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var restarts := []
+	map.restarted.connect(func() -> void: restarts.append(1))
+	map.scene_timer.left = 0.4
+	var fern: Node3D = map.travelers["fernanda"]
+	map.step(Vector2.ZERO, 0.5)
+	check(map.bear.is_active() and map.bear.target == fern and map.restarting and map.hunt_lock and not map.picks_allowed(), "at 0: the bear hunts the controlled traveler (Fernanda) and the inputs lock")
+	var nest_at: Vector3 = map.travelers["nestor"].global_position
+	map.step(Vector2(1.0, 0.0), DT)
+	check(map.travelers["nestor"].global_position.is_equal_approx(nest_at), "...nobody walks")
+	var downs := []
+	var on_down := func(id, _injury): downs.append(id)
+	GameState.traveler_downed.connect(on_down)
+	var steps := 0
+	while map.bear.target == fern and steps < 3000:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	check(GameState.is_downed("fernanda") and not GameState.is_downed("nestor") and map.bear.target == map.travelers["nestor"] and map.bear.state == BearScript.State.RUNNING, "it kills her, and runs on to Nestor")
+	steps = 0
+	while map.bear.state != BearScript.State.DONE and steps < 3000:
+		map.step(Vector2.ZERO, DT)
+		steps += 1
+	GameState.traveler_downed.disconnect(on_down)
+	check(GameState.all_downed() and downs == ["fernanda", "nestor"], "...and kills him (%s)" % str(downs))
+	_run_beat(map, 20.0, 0.25)
+	check(restarts.size() == 1, "then the death beat and the restart run once (%d)" % restarts.size())
+	map.free()
+	get_tree().paused = false
+
+	# A downed traveler is hunted too.
+	GameState.new_hike()
+	map = await _animals_map(104)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	restarts = []
+	map.restarted.connect(func() -> void: restarts.append(1))
+	GameState.damage_units("nestor", 99, "x")
+	map.step(Vector2.ZERO, DT)
+	check(map.downed_countdown.clock.running and GameState.controlled == "fernanda", "(setup) Nestor is down with the countdown running")
+	map.scene_timer.left = 0.2
+	map.step(Vector2.ZERO, 0.5)
+	check(map.bear.is_active() and map.bear.target == map.travelers["fernanda"] and not map.downed_countdown.clock.running, "at 0 with Nestor down: the bear goes for Fernanda, and the downed countdown is gone")
+	steps = 0
+	var hunted_downed := false
+	while map.bear.state != BearScript.State.DONE and steps < 6000:
+		map.step(Vector2.ZERO, DT)
+		hunted_downed = hunted_downed or map.bear.target == map.travelers["nestor"]
+		steps += 1
+	check(hunted_downed and GameState.all_downed(), "...then for downed Nestor too")
+	_run_beat(map, 20.0, 0.25)
+	check(restarts.size() == 1, "...and the scene restarts once (%d)" % restarts.size())
+	map.free()
+	get_tree().paused = false
+
+	# ---- The cairn, the wall and the trail ----
+	GameState.new_hike()
+	map = await _animals_map(105)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var at: Vector2 = CairnScript.center(cfg)
+	check(map.cairn_node != null and is_equal_approx(map.cairn_node.global_position.x, at.x) and is_equal_approx(map.cairn_node.global_position.z, at.y), "a cairn stands at the top edge, centred, from the start")
+	check(map.cairn_node.stones.size() >= 6 and map.cairn_node.stones.size() <= 8 and map.cairn_node.top_y > 2.0 and map.cairn_node.top_y < 2.5, "...of %d stones, %.2f m tall" % [map.cairn_node.stones.size(), map.cairn_node.top_y])
+	var radii: Array[float] = []
+	var flat := true
+	for stone in map.cairn_node.stones:
+		radii.append((stone.mesh as SphereMesh).radius)
+		flat = flat and stone.scale.y < 1.0
+	var narrowing := true
+	for i in range(1, radii.size()):
+		narrowing = narrowing and radii[i] < radii[i - 1]
+	check(narrowing and flat, "...flattened stones, narrowing upward")
+	check(map.cairn_node.body != null and map.cairn_node.body.get_child(0).shape is CylinderShape3D, "...with a solid base")
+	var px := Vector2((at.x - map.ground_rect.position.x) * 4.0, (at.y - 2.0 - map.ground_rect.position.y) * 4.0)
+	var beside_px := px - Vector2(36.0, 0.0)
+	check(map.ground_image.get_pixel(int(px.x), int(px.y)).get_luminance() > map.ground_image.get_pixel(int(beside_px.x), int(beside_px.y)).get_luminance() + 0.05, "a lighter trail runs behind it in the ground texture")
+	# The wall.
+	_put(map, map.player, 60.0, at.y + 1.5)
+	_put(map, map.partner, 58.0, at.y + 3.0)
+	await get_tree().physics_frame
+	_walk(map, Vector2(0.0, -1.0), 3.0)
+	check(map.player.global_position.z >= at.y - 0.001, "before the needs are met travelers cannot walk past the cairn's line (z %.2f)" % map.player.global_position.z)
+	var x_before: float = map.player.global_position.x
+	_walk(map, Vector2(1.0, -1.0), 1.0)
+	check(map.player.global_position.x > x_before + 1.0 and map.player.global_position.z >= at.y - 0.001, "...they slide along it")
+	_walk(map, Vector2(0.0, -1.0), 2.0)
+	check(map.partner.global_position.z >= at.y - 0.001, "...the partner too")
+	var open_trigger: Rect2 = CairnScript.trigger_rect(cfg)
+	_put(map, map.player, at.x, open_trigger.position.y + 1.0)
+	map.step(Vector2(0.0, -1.0), DT)
+	check(map.exit_flow.exit_state == "" and map.player.global_position.z >= at.y - 0.001, "the trail is shut: a traveler put on it is set back as soon as they move, and nothing exits")
+	check(map.open_bounds() != map.walk_bounds(), "(the bounds are cut at the cairn)")
+	# Pickups can all be reached.
+	var reachable := true
+	for index in map.pickup_nodes:
+		reachable = reachable and map.pickup_nodes[index].global_position.z >= at.y - 0.001
+	check(reachable, "every bottle and tool lies on the reachable side of the wall")
+	# Meeting the needs opens it.
+	_put(map, map.player, 60.0, at.y + 1.5)
+	_put(map, map.partner, 58.0, at.y + 3.0)
+	await get_tree().physics_frame
+	map.scene_timer.left = 50.0
+	var signals := [0]
+	map.exit_flow.exit_opened.connect(func() -> void: signals[0] += 1)
+	_finish_animal_needs(map)
+	check(map.needs.done.size() == 6 and map.needs_finished and signals[0] == 1 and map.exit_flow.exit_open, "(setup) all six needs are met: the exit opens once")
+	check(map.scene_timer.stopped and not map.scene_timer.is_active(), "the timer is stopped for good")
+	_run(map, 60.0, 0.25)
+	check(is_equal_approx(map.scene_timer.left, 50.0) and not map.bear.is_active() and not map.restarting and map.roars.is_empty(), "...60 s later: no bear, no warning, the timer has not moved")
+	check(map.open_bounds() == map.walk_bounds() and map.player.bounds == map.walk_bounds() and map.partner.bounds == map.walk_bounds(), "the wall is gone")
+
+	# ---- The note ----
+	check(map.exit_flow.logic.phase == EndingScript.LANDED, "by now the exit note has flown in and landed")
+	var spot: Vector2 = map.exit_flow.logic.spot
+	check(map.exit_flow.note_node != null and map.picking.has_note() and map.exit_flow.logic.in_range(_xz(map.player), spot) and map.walk_bounds().has_point(spot), "...within the 1.5-3 m range of the traveler, on the map")
+	check(spot.distance_to(at) >= float(cfg["ending"]["note"]["clear_cairn"]) - 0.001, "...not on the cairn")
+	check(is_equal_approx(map.exit_flow.note_node.global_position.y, map.terrain.height_at(spot.x) + float(cfg["ending"]["note"]["rest_lift"])) and is_equal_approx(map.exit_flow.note_node.rotation.x, -PI / 2.0), "...lying flat on the ground")
+	GameState.inventory.add("hallasan_exit_sumin")  # (an older page, gained first)
+	_put(map, map.player, spot.x, spot.y)
+	map.step(Vector2.ZERO, DT)
+	check(GameState.inventory.count(EXIT2_ID) == 0, "(it is not taken by walking over it)")
+	check(map.pick_nearest() and GameState.inventory.count(EXIT2_ID) == 1 and map.exit_flow.note_node == null and map.exit_flow.logic.phase == EndingScript.TAKEN and not map.picking.has_note(), "Space picks it up into the backpack")
+	check(NotebookScript.is_note(EXIT2_ID), "...as a note")
+	check(NotebookScript.note_ids(GameState.inventory.items()).has(EXIT2_ID), "...it is a page of the 수첩")
+	check(not map.pick_nearest() or GameState.inventory.count(EXIT2_ID) == 1, "(and cannot be taken twice)")
+	# The 수첩 shows it: plain lines, then the handwritten ones.
+	check(map.open_notebook("notebook_p1"), "(setup) the 수첩 opens")
+	await _settle_layout()
+	await _settle_layout()
+	var hud = map.backpack_hud
+	var doc_text := _exit2_doc_text()
+	check(hud.notebook_visible() and hud.notebook_text() == doc_text, "the 수첩 opens on the schedule, word for word")
+	var plain: Label = hud.notebook_text_label()
+	var hand: Label = hud.notebook_hand_label()
+	check(hand.visible and hand.text == "(handwritten at the bottom, smudged)\n3 of us are still at the stone tower. They're waiting for you." and not plain.text.contains("handwritten"), "the last two lines are in their own label, the printed lines in the other")
+	check(plain.text + "\n" + hand.text == doc_text, "...together they are the whole note")
+	var look: Dictionary = Content.notebook["styles"]["handwritten"]
+	check(hand.get_theme_color("font_color").is_equal_approx(Color(look["color"][0], look["color"][1], look["color"][2])) and hand.get_theme_color("font_color") != plain.get_theme_color("font_color"), "the handwriting has another ink colour")
+	check(is_equal_approx(hand.modulate.a, float(look["alpha"])) and hand.modulate.a < 1.0 and is_equal_approx(plain.modulate.a, 1.0), "...a lower alpha, as if smudged")
+	var hand_font: Font = hand.get_theme_font("font")
+	check(hand_font is FontVariation and not (hand_font as FontVariation).variation_transform.is_equal_approx(Transform2D.IDENTITY) and plain.get_theme_font("font") == KO_FONT, "...a slant (a sheared font)")
+	check(hand.get_theme_font_size("font_size") > plain.get_theme_font_size("font_size"), "(bigger: %d vs %d)" % [hand.get_theme_font_size("font_size"), plain.get_theme_font_size("font_size")])
+	# The other note is untouched.
+	check(hud.notebook_arrow_visible(-1), "(there is an older page)")
+	_tap(viewport, KEY_A)
+	await _settle_layout()
+	check(hud.notebook_text() == String(Content.notes["hallasan_exit_sumin"]["text"]) and not hand.visible and hand.text == "" and hud.notebook_text_label().text == hud.notebook_text(), "수민's note renders as before: all in the plain label, no handwriting")
+	check(is_equal_approx(plain.modulate.a, 1.0) and plain.get_theme_font("font") == KO_FONT, "...in the plain look")
+	_tap(viewport, KEY_D)
+	await _settle_layout()
+	check(hud.notebook_hand_text() != "", "flipping back to the schedule shows the handwriting again")
+	map.close_backpack()
+
+	_put(map, map.player, 60.0, at.y + 1.0)
+	_put(map, map.partner, 58.0, at.y + 2.0)
+	await get_tree().physics_frame
+	_walk(map, Vector2(0.0, -1.0), 2.5)
+	check(map.player.global_position.z < at.y - 0.5 and map.exit_flow.exit_state == "", "a traveler can walk past the cairn's line now (z %.2f)" % map.player.global_position.z)
+
+	# ---- The exit ----
+	var gate := CairnScript.trigger_rect(cfg)
+	var gate_at := Vector2(at.x, gate.position.y + gate.size.y * 0.5)
+	GameState.heart_units["fernanda"] = 7
+	GameState.heart_units["nestor"] = 6
+	GameState.inventory.add("ssanghwatang", 2)
+	GameState.tools.add("jipge")
+	GameState.damage_units("nestor", 99, "x")
+	map.step(Vector2.ZERO, DT)
+	_put(map, map.player, gate_at.x, gate_at.y)
+	_put(map, map.partner, gate_at.x - 2.0, gate_at.y + 1.0)
+	await get_tree().physics_frame
+	check(map.exit_flow.trigger_rect().has_point(_xz(map.player)) and not map.can_leave(), "(setup) the human traveler is on the trail with Nestor down")
+	map.step(Vector2.ZERO, DT)
+	map.step(Vector2.ZERO, DT)
+	check(map.exit_flow.exit_state == "" and map.revive.note == "Revive Nestor before you leave." and map.revive_view.note_label.visible, "with someone downed the exit does not fire; the note shows")
+	check(not GameState.has_pending_bank() and map.ending_hud.alpha() == 0.0 and map.picks_allowed(), "...nothing is banked, nothing goes black, and the scene goes on")
+	GameState.revive("nestor", 2)
+	var handoff := []
+	map.exit_flow.exit_handoff.connect(func(target: String, path: String) -> void: handoff.append([target, path]))
+	var started := [0]
+	map.exit_flow.exit_started.connect(func() -> void: started[0] += 1)
+	map.step(Vector2.ZERO, DT)
+	check(map.exit_flow.exit_state == "fading" and started[0] == 1 and map.can_leave(), "with both standing the exit fires: the fade begins")
+	check(GameState.has_pending_bank() and GameState.pending_bank["target"] == BEAST_ID and GameState.pending_bank["units"] == GameState.heart_units and GameState.pending_bank["inventory"] == GameState.inventory.snapshot() and GameState.pending_bank["tools"] == GameState.tools.snapshot(), "hearts, backpack and tools are banked for the next scene")
+	check(GameState.pending_bank["inventory"].get("ssanghwatang", 0) >= 2 and GameState.pending_bank["inventory"].get(EXIT2_ID, 0) == 1 and GameState.pending_bank["units"]["fernanda"] == 7 and not GameState.pending_bank["tools"].is_empty(), "...they hold what was gained (bottles, the note, a tool, 7 half hearts)")
+	var frozen_at := _xz(map.player)
+	map.step(Vector2(-1.0, 0.0), 0.25)
+	check(_xz(map.player) == frozen_at and not map.picks_allowed() and not map.open_backpack() and not map.open_notebook("notebook_p1") and not map.click(Vector2(100.0, 100.0)), "input is blocked in the fade")
+	check(map.ending_hud.alpha() > 0.2 and map.ending_hud.alpha() < 0.8, "a quarter of a second in, the screen is part black")
+	map.step(Vector2.ZERO, 0.8)
+	check(map.exit_flow.exit_state == "handed_off" and is_equal_approx(map.ending_hud.alpha(), 1.0) and handoff == [[BEAST_ID, "res://scenes/common/to_be_continued.tscn"]], "after fade_s it is black and handed off to the placeholder scene")
+	check(map.exit_flow.logic.scene_path(BEAST_ID) != "" and map.ending_hud.line_text() == "", "(the scene exists, so there is no hold text)")
+	# The next scene starts from the bank.
+	var bank := GameState.pending_bank.duplicate(true)
+	GameState.begin_scene(BEAST_ID)
+	check(GameState.heart_units == bank["units"] and GameState.inventory.snapshot() == bank["inventory"] and GameState.tools.snapshot() == bank["tools"] and not GameState.has_pending_bank(), "begin_scene(next) brings hearts, backpack and tools over")
+	map.free()
+	get_tree().paused = false
+
+	# Esc over the black, and a restart from it.
+	GameState.new_hike()
+	map = await _animals_map(106)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_finish_animal_needs(map)
+	_run(map, 8.0, 0.25)
+	_put(map, map.player, gate_at.x, gate_at.y)
+	await get_tree().physics_frame
+	map.step(Vector2.ZERO, DT)
+	check(map.exit_flow.exit_state == "fading", "(setup) a second run: fading")
+	check(map.open_pause_menu() and map.pause_hud.layer > map.ending_hud.layer, "Esc opens the pause menu over the black")
+	map.pause_hud.choose(0)
+	map.exit_flow.clear()
+	check(map.exit_flow.exit_state == "" and not GameState.has_pending_bank() and map.ending_hud.alpha() == 0.0 and map.exit_flow.note_node == null, "a restart clears the black, the note and the bank")
+	map.free()
+	get_tree().paused = false
+
+	# An exit before the needs are met does nothing (the trail is shut).
+	GameState.new_hike()
+	map = await _animals_map(107)
+	map.exit_flow.tick(1.0)
+	check(map.exit_flow.exit_state == "" and not map.exit_flow.exit_open and not GameState.has_pending_bank(), "(an unopened exit never fires)")
+	map.free()
+	get_tree().paused = false
+
+	AnimalsScript.timer_enabled = false
+	AnimalsScript.exit_enabled = false
+	_bare_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+	_section_done("test_exit9e_scene")
+
+
+## Every node under `root`.
+func _all_nodes(root: Node) -> Array[Node]:
+	var found: Array[Node] = [root]
+	for child in root.get_children():
+		found.append_array(_all_nodes(child))
+	return found
+
+
+func test_exit9e_placeholder() -> void:
+	GameState.new_hike()
+	GameState.heart_units["fernanda"] = 3
+	var scene: Control = load("res://scenes/common/to_be_continued.tscn").instantiate()
+	add_child(scene)
+	scene.set_process(false)  # (the test ages it by hand)
+	await get_tree().process_frame
+	check(scene.line_label.text == "To be continued…" and scene.sub_label.text == "백록담" and scene.sub_label.get_index() > scene.line_label.get_index(), "the placeholder shows 'To be continued…' with '백록담' below it")
+	check(scene.get_node("Black").color == Color.BLACK, "...on black")
+	check(is_zero_approx(scene.text_alpha()), "...fading in from nothing")
+	var returns := []
+	scene.returning.connect(func(path: String) -> void: returns.append(path))
+	scene.advance(0.3)
+	scene._input(_key_event(KEY_SPACE))
+	check(returns.is_empty() and not scene.returned, "a key in the first moments is ignored")
+	scene.advance(0.7)
+	check(is_equal_approx(scene.text_alpha(), 0.5), "...the text fades in over %.0f s (half at 1 s)" % scene.fade_in_s)
+	scene.advance(1.0)
+	check(is_equal_approx(scene.text_alpha(), 1.0) and scene.accepts_input(), "(after the fade it takes input)")
+	scene._input(_key_event(KEY_SPACE, true, true))
+	check(returns.is_empty(), "a key repeat does nothing")
+	scene._input(_key_event(KEY_SPACE, false))
+	check(returns.is_empty(), "a key release does nothing")
+	scene._input(_key_event(KEY_Q))
+	check(returns == ["res://scenes/foraging/foraging.tscn"] and ToBeContinuedScript.main_scene_path() == "res://scenes/foraging/foraging.tscn", "any key goes back to the main scene")
+	check(GameState.heart_units["fernanda"] == GameState.max_units(), "...on a new hike")
+	scene._input(_key_event(KEY_Q))
+	check(returns.size() == 1, "(once)")
+	scene.free()
+	var again: Control = load("res://scenes/common/to_be_continued.tscn").instantiate()
+	add_child(again)
+	again.set_process(false)
+	await get_tree().process_frame
+	again.advance(5.0)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	var clicks := []
+	again.returning.connect(func(path: String) -> void: clicks.append(path))
+	again._input(click)
+	check(clicks == ["res://scenes/foraging/foraging.tscn"], "a click goes back too")
+	again.free()
+	_bare_hike()
+	_section_done("test_exit9e_placeholder")

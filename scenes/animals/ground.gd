@@ -4,6 +4,8 @@ extends RefCounted
 ## the texture the scene puts on the floor. Everything is seeded, so one seed is one ground.
 ## Coordinates as in the animal scene: x along the stage, z depth, 1 unit = 1 m.
 
+const Cairn := preload("res://scenes/animals/cairn.gd")
+
 const LAKE := 0
 const SHORE := 1
 const FOREST := 2
@@ -132,6 +134,9 @@ class Field:
 	var bank_blend := 0.3
 	var bank_gain := 1.8
 	var bank := FastNoiseLite.new()
+	## The cairn's trail (Prompt 9e): the animals section (empty = no trail) and its colour.
+	var trail_cfg: Dictionary = {}
+	var trail_color := Color.WHITE
 	## zone name -> {"colors": Array[Color], "weights": Array[float], "bounds": PackedFloat32Array}
 	var palettes := {}
 	var patch := FastNoiseLite.new()
@@ -158,6 +163,9 @@ class Field:
 		bank_m = float(lake["bank_m"])
 		bank_blend = clampf(float(lake["bank_blend_m"]), 0.0, bank_m)
 		bank_gain = float(lake["bank_gain"])
+		if cfg.has("cairn"):
+			trail_cfg = cfg
+			trail_color = Color.html(String(cfg["cairn"]["trail"]["color"]))
 		bank.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		bank.seed = seed_value + 104729
 		bank.frequency = float(lake["bank_frequency"])
@@ -205,6 +213,10 @@ class Field:
 		if half and d <= lake_radius:
 			return under  # plain ground under the water
 		var land := _land_color(x, z)
+		if not trail_cfg.is_empty():  # the lighter trail behind the cairn
+			var on_trail := Cairn.trail_weight(trail_cfg, x, z)
+			if on_trail > 0.0:
+				land = land.lerp(trail_color, on_trail)
 		if half and d <= lake_radius + bank_m:
 			var m := clampf(0.5 + bank.get_noise_2d(x, z) * bank_gain, 0.0, 1.0)
 			var bank_color := mud.lerp(basalt, m)

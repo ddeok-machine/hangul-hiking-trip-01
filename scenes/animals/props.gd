@@ -4,6 +4,7 @@ extends RefCounted
 ## prop type. Trees and reeds fade (dithered) where they would hide a traveler.
 
 const Ground := preload("res://scenes/animals/ground.gd")
+const Cairn := preload("res://scenes/animals/cairn.gd")
 
 const TYPES: Array[String] = ["tree", "tuft", "reed", "rock"]
 const FADE_SHADER := """
@@ -101,7 +102,7 @@ static func place(cfg: Dictionary, seed_value: int) -> Dictionary:
 				var near_start := false
 				for s in starts:
 					near_start = near_start or spot.distance_to(s) < float(props["start_clear_m"])
-				if near_start:
+				if near_start or (cfg.has("cairn") and Cairn.blocks_props(cfg, spot)):  # Prompt 9e: nothing stands on the cairn or its trail
 					continue
 				out[type].append(_make(type, zone, spot, props, cfg, rng))
 				made += 1

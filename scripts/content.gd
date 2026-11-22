@@ -72,7 +72,11 @@ func _load_notes() -> void:
 			if problem != "":
 				push_error("%s in %s%s" % [problem, NOTES_DIR, file_name])
 				continue
-			notes[entry["id"]] = {"id": entry["id"], "writer": entry["writer"], "text": entry["text"]}
+			var note := {"id": entry["id"], "writer": entry["writer"], "text": entry["text"]}
+			if entry.has("style"):  # an optional look for the lines from 'styled_from_line' on (0-based)
+				note["style"] = String(entry["style"])
+				note["styled_from_line"] = int(entry["styled_from_line"])
+			notes[entry["id"]] = note
 			items[entry["id"]] = {"id": entry["id"], "kind": "note", "name_ko": "", "name_en": "Note", "description_en": ""}
 
 
@@ -89,6 +93,12 @@ static func note_problem(entry: Variant, known: Dictionary, taken: Dictionary, w
 		return "Note '%s' has unknown writer '%s'" % [id, str(entry.get("writer", ""))]
 	if not entry.get("text") is String or String(entry["text"]).strip_edges() == "":
 		return "Note '%s' has no text" % id
+	if entry.has("style") or entry.has("styled_from_line"):
+		var lines: int = String(entry["text"]).split("\n").size()
+		if not entry.get("style") is String or String(entry["style"]) == "":
+			return "Note '%s' has styled_from_line but no style" % id
+		if not (entry.get("styled_from_line") is float or entry.get("styled_from_line") is int) or int(entry["styled_from_line"]) < 0 or int(entry["styled_from_line"]) >= lines:
+			return "Note '%s' needs a styled_from_line from 0 to %d" % [id, lines - 1]
 	return ""
 
 

@@ -59,6 +59,8 @@ var _book_next: Label
 var _book_page: PanelContainer
 var _book_scroll: ScrollContainer
 var _book_text: Label
+var _book_hand: Label
+var _book_shown_text := ""
 var _book_empty: Label
 var _book_config: Dictionary = {}
 var _book_shown := "<closed>"  # the note id on the page (or "" for the empty state) the last time it was drawn
@@ -515,7 +517,17 @@ func notebook_visible() -> bool:
 
 ## The text on the shown page ("" for the empty state).
 func notebook_text() -> String:
-	return _book_text.text if _book_scroll.visible else ""
+	return _book_shown_text if _book_scroll.visible else ""
+
+
+## The label of a styled tail (handwritten lines); hidden for a plain page (tests).
+func notebook_hand_label() -> Label:
+	return _book_hand
+
+
+## The styled lines on the shown page, "" if the page has none.
+func notebook_hand_text() -> String:
+	return _book_hand.text if _book_hand.visible else ""
 
 
 ## The empty-state line, "" while a page is shown.
@@ -595,12 +607,24 @@ func _build_book(column: VBoxContainer) -> void:
 	_book_scroll.name = "PageScroll"
 	_book_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_book_page.add_child(_book_scroll)
+	var body := VBoxContainer.new()  # the page's text, and (for a note with a styled tail) its handwritten lines
+	body.name = "PageBody"
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 0)
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_book_scroll.add_child(body)
 	_book_text = _label("PageText", int(nb["font_size"]), _color(nb["page_text_color"]))
 	_book_text.add_theme_font_override("font", FONT)
 	_book_text.add_theme_constant_override("line_spacing", int(nb["line_spacing"]))
 	_book_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_book_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_book_scroll.add_child(_book_text)
+	body.add_child(_book_text)
+	_book_hand = _label("PageHand", int(nb["font_size"]), _color(nb["page_text_color"]))
+	_book_hand.add_theme_constant_override("line_spacing", int(nb["line_spacing"]))
+	_book_hand.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_book_hand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_book_hand.visible = false
+	body.add_child(_book_hand)
 	_book_empty = _label("PageEmpty", int(nb["empty_font_size"]), _color(nb["page_empty_text_color"]))
 	_book_empty.add_theme_font_override("font", FONT)
 	_book_empty.text = str(nb["empty_text"])
@@ -610,6 +634,18 @@ func _build_book(column: VBoxContainer) -> void:
 	_book_page.add_child(_book_empty)
 	_book_next = _book_arrow("Next", str(nb["arrow_next"]))
 	_book.move_child(_book_previous.get_parent(), 0)
+
+
+## Dresses the styled tail of a page in a note style of notebook.json 'styles': another ink colour,
+## a slant (the font's shear), a bigger size and a lower alpha (smudged).
+func _style_hand(look: Dictionary) -> void:
+	var font := FontVariation.new()
+	font.base_font = FONT
+	font.variation_transform = Transform2D(Vector2(1.0, 0.0), Vector2(float(look["skew"]), 1.0), Vector2.ZERO)
+	_book_hand.add_theme_font_override("font", font)
+	_book_hand.add_theme_font_size_override("font_size", roundi(float(_book_config["font_size"]) * float(look["font_scale"])))
+	_book_hand.add_theme_color_override("font_color", _color(look["color"]))
+	_book_hand.modulate.a = float(look["alpha"])
 
 
 ## A flip indicator: a label in a fixed-width cell added to the notebook row, so the
@@ -646,7 +682,18 @@ func _update_book(items: Array) -> void:
 	if id != _book_shown:  # a new page starts at its top
 		_book_shown = id
 		_book_scroll.scroll_vertical = 0
-	_book_text.text = text
+	var style: Dictionary = _backpack.book.page_style(items)
+	_book_shown_text = text
+	if style.is_empty() or not _book_config.get("styles", {}).has(String(style["style"])):
+		_book_text.text = text
+		_book_hand.visible = false
+		_book_hand.text = ""
+	else:  # a note whose last lines are handwritten (or otherwise styled): the plain lines, then the styled ones
+		var parts: Array[String] = BookLogic.split_at_line(text, int(style["from_line"]))
+		_book_text.text = parts[0]
+		_style_hand(_book_config["styles"][String(style["style"])])
+		_book_hand.text = parts[1]
+		_book_hand.visible = parts[1] != ""
 	_book_scroll.visible = text != ""
 	_book_empty.visible = text == ""
 	_book_previous.visible = _backpack.book.has_previous(items)

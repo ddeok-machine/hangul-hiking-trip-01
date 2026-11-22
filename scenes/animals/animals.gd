@@ -52,6 +52,12 @@ const HintLetterHud := preload("res://scenes/animals/hint_letter_hud.gd")
 const Predators := preload("res://scenes/animals/predators.gd")
 const KillGore := preload("res://scenes/animals/kill_gore.gd")
 const AttackMark := preload("res://scenes/animals/attack_mark.gd")
+const SceneTimer := preload("res://scenes/animals/scene_timer.gd")
+const BearRoar := preload("res://scenes/animals/bear_roar.gd")
+const WarningFx := preload("res://scenes/animals/warning_fx.gd")
+const Cairn := preload("res://scenes/animals/cairn.gd")
+const ExitFlow := preload("res://scenes/animals/exit_flow.gd")
+const EndingHud := preload("res://scenes/foraging/ending_hud.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
 ## A bare-hand grab hurts (and is made by) the traveler being controlled: Fernanda until she is
@@ -65,6 +71,8 @@ const SALT_REWARDS := 5
 const SALT_TOOLS := 6          # where the tools lie (Prompt 9c)
 const SALT_TOOL_REWARDS := 7   # the tool a met need drops
 const SALT_PREDATORS := 8      # hunts, attacks and their damage rolls (Prompt 9d)
+const SALT_TIMER := 9          # the hidden scene timer's duration and shadow edge (Prompt 9e)
+const SALT_EXIT := 10          # the exit note's landing spot and turn (Prompt 9e)
 
 const GROUND_STEP := 1.0   # metres between ground mesh vertices along x
 
@@ -81,6 +89,11 @@ static var hints_enabled := true
 ## False: the predators neither hunt nor attack (the sections written before Prompt 9d; the 9d
 ## section turns it on).
 static var predators_enabled := true
+## False: no hidden scene timer (the sections written before Prompt 9e run for minutes of scene
+## time and expect no bear to come; the 9e section turns it on).
+static var timer_enabled := true
+## False: no cairn, no wall before it and no exit (the older sections walk to every edge).
+static var exit_enabled := true
 
 var config: Dictionary = {}
 var stage_width := 0.0
@@ -147,6 +160,21 @@ var tool_hud: CanvasLayer
 var predators
 var attack_marks: Dictionary = {}
 var kill_gores := 0
+## Prompt 9e. The hidden scene timer (a SceneTimer; null when `timer_enabled` is off), the camera
+## shake and roars it makes, the shadow, the cairn, the exit (the note, the black, the hand-off)
+## and whether the last need is met. `roars` lists what was played: {"loud"}.
+var scene_timer
+var warning_fx: CanvasLayer
+var roar_player: AudioStreamPlayer
+var roars: Array[Dictionary] = []
+var shake_left := 0.0
+var shake_offset := Vector2.ZERO
+var cairn_node: Node3D
+var exit_flow
+var ending_hud: CanvasLayer
+var needs_finished := false
+## Who the bear still has to hunt after the one it is on (the scene timer's two bears).
+var bear_queue: Array[String] = []
 var tool_rng := RandomNumberGenerator.new()
 var tool_pending: Dictionary = {}
 var last_tool_result: Dictionary = {}
@@ -214,6 +242,7 @@ func _ready() -> void:
 	_build_lake()
 	_build_travelers()
 	_build_props()
+	_build_cairn()
 	hearts_hud = HeartsHud.new()
 	add_child(hearts_hud)
 	hearts_hud.setup(ui["hearts_hud"])
@@ -252,6 +281,7 @@ func _ready() -> void:
 	bear = Bear.new()
 	add_child(bear)
 	bear.setup(config["bear"], view_rect, terrain.height_at, float(cam["pitch_deg"]))
+	_build_timer_and_exit()
 	_sync_downed()  # the hearts may already hold a downed traveler (a pending bank)
 	update_camera(0.0, true)
 
@@ -300,7 +330,7 @@ func step(input: Vector2, delta: float) -> void:
 	elif picking.is_walking():
 		walk = _walk_step(delta)
 	var menus_closed: bool = not pause_menu.is_open and not backpack.is_open and not hint_hud.is_open()
-	var running: bool = not restarting and menus_closed
+	var running: bool = not restarting and menus_closed and not exit_blocked()
 	if running:
 		if not discovery_hud.word_select.is_open():
 			if not GameState.is_downed(GameState.controlled):
@@ -315,12 +345,17 @@ func step(input: Vector2, delta: float) -> void:
 		_tick_animals(delta)
 		_watch_animals(delta)
 	_tick_downed(delta)
+	_tick_timer(delta)
 	_sync_downed()
+	_clear_shake()
 	update_camera(delta)
+	_apply_shake()
 	props.set_travelers(player.global_position, partner.global_position, float(config["camera"]["pitch_deg"]))
 	_update_reach(delta)
 	revive_view.refresh(revive, GameState.controlled, _world_positions(), terrain.height_at)
 	needs.update(delta)
+	if exit_flow != null:
+		exit_flow.tick(delta)
 	_update_bubbles(delta)
 	_update_guide(delta)
 	_update_hint(delta)
@@ -385,7 +420,7 @@ func _predator_context() -> Dictionary:
 		"controlled": GameState.controlled,
 		"equipped": {} if held.is_empty() else Content.item(String(held["id"])),
 		"lure": lure,
-		"attacks_on": not restarting and _dim == null and not spelling_hud.is_open() and not discovery_hud.word_select.is_open() and not bear.is_active()}
+		"attacks_on": not restarting and _dim == null and not spelling_hud.is_open() and not discovery_hud.word_select.is_open() and not bear.is_active() and not exit_blocked()}
 
 
 func _tick_predators(delta: float) -> void:
@@ -566,7 +601,7 @@ func _build_needs(ui: Dictionary) -> void:
 ## False while restarting, while a menu or the backpack is open, or when the traveler being
 ## controlled is downed (a downed one cannot pick, grab, spell or open the backpack).
 func picks_allowed() -> bool:
-	if restarting or pause_menu.is_open or backpack.is_open or hint_hud.is_open():
+	if restarting or pause_menu.is_open or backpack.is_open or hint_hud.is_open() or exit_blocked():
 		return false
 	return not GameState.is_downed(GameState.controlled)
 
@@ -773,6 +808,7 @@ func begin_death_beat() -> void:
 		return
 	restarting = true
 	hunt_lock = false
+	bear_queue.clear()
 	_abandon_downed()
 	picking.cancel_walk()
 	tool_pending = {}
@@ -867,6 +903,8 @@ func pick_nearest() -> bool:
 		return false
 	if press_revive() != "none":  # a downed traveler in range comes first
 		return true
+	if exit_flow != null and picking.nearest_target(_flat_of(player))["type"] == "note":
+		return exit_flow.pick_note()  # the exit note (Prompt 9e), as in foraging
 	if not equipped_tool_def().is_empty():  # a tool in hand: a pickup under it first, else the tool grab
 		var near_pile: int = picking.nearest_pile(_flat_of(player))
 		if near_pile >= 0:
@@ -890,7 +928,7 @@ func _build_pickups() -> void:
 	var starts: Array = []
 	for id in config["start"]:
 		starts.append(Vector2(float(config["start"][id][0]), float(config["start"][id][1])))
-	var placed := HealPickups.place(cfg, DecoyPlacement.derive_seed(crossing_seed, SALT_PICKUPS), walk_bounds(), lake_center, lake_radius, float(config["lake"]["clearance_m"]), starts)
+	var placed := HealPickups.place(cfg, DecoyPlacement.derive_seed(crossing_seed, SALT_PICKUPS), open_bounds(), lake_center, lake_radius, float(config["lake"]["clearance_m"]), starts)
 	for entry in placed:
 		var spot: Vector2 = entry["spot"]
 		var node := HealPickup.new()
@@ -914,7 +952,7 @@ func _build_tool_pickups(starts: Array, bottles: Array[Dictionary]) -> void:
 	var avoid: Array = []
 	for entry in bottles:
 		avoid.append(entry["spot"])
-	var placed := ToolPickups.place(cfg, DecoyPlacement.derive_seed(crossing_seed, SALT_TOOLS), walk_bounds(), lake_center, lake_radius, float(config["lake"]["clearance_m"]), starts, avoid)
+	var placed := ToolPickups.place(cfg, DecoyPlacement.derive_seed(crossing_seed, SALT_TOOLS), open_bounds(), lake_center, lake_radius, float(config["lake"]["clearance_m"]), starts, avoid)
 	for entry in placed:
 		var spot: Vector2 = entry["spot"]
 		var node := ToolPickup.new()
@@ -1062,6 +1100,8 @@ func _update_reach(delta: float) -> void:
 		var target: Dictionary = picking.nearest_target(Vector2(player.global_position.x, player.global_position.z))
 		walker = slot_walker.get(int(target["index"])) if target["type"] == "plant" else null
 		bottle = pickup_nodes.get(int(target["index"])) if target["type"] == "pile" else null
+		if target["type"] == "note" and exit_flow != null and exit_flow.note_node != null:
+			bottle = exit_flow.note_node  # the reach ring sits on the landed exit note
 	_ring.visible = (walker != null and animal_nodes.has(walker)) or bottle != null
 	if not _ring.visible:
 		return
@@ -1401,6 +1441,9 @@ func _bear_kill() -> void:
 	var id := String(travelers.find_key(bear.target))
 	HitFx.hit(self, travelers[id], gore, bear.burst_strength, float(gore["tint_duration"]) * 2.0)
 	GameState.damage_units(id, GameState.max_units(), "bear")
+	if not bear_queue.is_empty():  # the scene timer's bear goes on to the other traveler, downed or not
+		bear.hunt(travelers[bear_queue.pop_front()], true)
+		return
 	for other in GameState.TRAVELERS:
 		if not GameState.is_downed(other):
 			bear.hunt(travelers[other], true)
@@ -1412,6 +1455,137 @@ func _abandon_downed() -> void:
 	downed_countdown.clock.abandon()
 	_music.stop()
 	stuck_hud.refresh(downed_countdown.clock, false)
+
+
+# ---- The hidden scene timer, its warnings and the bear (Prompt 9e) ----
+
+## True while the scene is really playing as far as the timer goes: no menu, backpack, spelling
+## view or hint letter up (each pauses the scene), not in the death beat or a bear run, and the
+## exit not entered.
+func _timer_playing() -> bool:
+	return not restarting and _dim == null and not pause_menu.is_open and not backpack.is_open \
+			and not spelling_hud.is_open() and not hint_hud.is_open() and not bear.is_active() and not exit_blocked()
+
+
+## Counts the timer down, acts on its warnings and ages the shake and the shadow.
+func _tick_timer(delta: float) -> void:
+	if scene_timer == null:
+		return
+	var playing := _timer_playing()
+	if playing:  # age the last warning's shake and shadow first: a new one starts fresh
+		shake_left = maxf(shake_left - delta, 0.0)
+		warning_fx.advance(delta)
+	for event in scene_timer.tick(delta, playing):
+		match String(event["event"]):
+			"warn1", "repeat", "repeat_loud":
+				_warn(event)
+			"warn2":
+				_warn(event)
+				warning_fx.start(scene_timer.shadow_edge)
+			"timeout":
+				send_timeout_bears()
+
+
+## A warning: the camera shakes and a roar sounds (loud from the second warning on).
+func _warn(event: Dictionary) -> void:
+	var timer_cfg: Dictionary = config["scene_timer"]
+	shake_left = float(timer_cfg["shake"]["seconds"])
+	var loud: bool = event["loud"]
+	roars.append({"loud": loud, "left": float(event["left"])})
+	roar_player.stream = BearRoar.make(timer_cfg["roar"], loud)
+	roar_player.volume_db = BearRoar.volume_db(timer_cfg["roar"], loud)
+	roar_player.play()
+
+
+func _clear_shake() -> void:
+	camera.h_offset = 0.0
+	camera.v_offset = 0.0
+	shake_offset = Vector2.ZERO
+
+
+## Shakes the camera a little while a warning's shake lasts: a quick wobble that dies away.
+func _apply_shake() -> void:
+	if scene_timer == null or shake_left <= 0.0:
+		return
+	var shake: Dictionary = config["scene_timer"]["shake"]
+	var seconds := float(shake["seconds"])
+	var t := seconds - shake_left
+	var envelope := shake_left / maxf(seconds, 0.001)
+	var amplitude := float(shake["amplitude_m"]) * envelope
+	shake_offset = Vector2(sin(TAU * float(shake["hz"]) * t), 0.7 * cos(TAU * float(shake["hz"]) * 1.3 * t)) * amplitude
+	camera.h_offset = shake_offset.x
+	camera.v_offset = shake_offset.y
+
+
+## The scene timer ran out with the needs unfinished: the bear comes for the controlled traveler,
+## then for the other (a downed one too). Inputs lock; the animals go on; the death beat follows
+## the second kill. False if a bear is on its way already, the scene is dying or the needs are met.
+func send_timeout_bears() -> bool:
+	if bear.is_active() or _dim != null or needs_finished:
+		return false
+	var first := GameState.controlled
+	bear_queue.clear()
+	bear_queue.append(GameState.partner_of(first))
+	restarting = true
+	hunt_lock = true
+	picking.cancel_walk()
+	tool_pending = {}
+	_abandon_downed()
+	return bear.hunt(travelers[first])
+
+
+## The last need is met (needs_complete): the timer stops for good, the wall at the cairn's line
+## comes down and the exit note's pause starts.
+func _on_needs_complete() -> void:
+	needs_finished = true
+	if scene_timer != null:
+		scene_timer.stop()
+	if exit_flow != null:
+		for t in travelers.values():
+			t.bounds = walk_bounds()
+		exit_flow.open()
+
+
+## True from the moment the exit has been entered (the black falls and the next scene loads).
+func exit_blocked() -> bool:
+	return exit_flow != null and exit_flow.exit_state != ""
+
+
+## True while the exit's clocks stand still: a panel or view is open, or the scene is dying.
+func exit_frozen() -> bool:
+	return spelling_hud.is_open() or pause_menu.is_open or backpack.is_open or hint_hud.is_open() or _dim != null or restarting
+
+
+## The cairn (with its collider) on the far edge, when the exit is on.
+func _build_cairn() -> void:
+	if not exit_enabled or not config.has("cairn"):
+		return
+	var at := Cairn.center(config)
+	cairn_node = Cairn.new()
+	add_child(cairn_node)
+	cairn_node.setup(config["cairn"], Vector3(at.x, terrain.height_at(at.x), at.y))
+
+
+## The scene timer (seeded), its shadow and roar, and the exit (its note and the black).
+func _build_timer_and_exit() -> void:
+	if timer_enabled and config.has("scene_timer"):
+		scene_timer = SceneTimer.new(config["scene_timer"], DecoyPlacement.derive_seed(crossing_seed, SALT_TIMER))
+		warning_fx = WarningFx.new()
+		add_child(warning_fx)
+		warning_fx.setup(config["scene_timer"]["shadow"])
+		roar_player = AudioStreamPlayer.new()
+		roar_player.name = "Roar"
+		add_child(roar_player)
+	if exit_enabled and config.has("ending"):
+		ending_hud = EndingHud.new()
+		add_child(ending_hud)
+		ending_hud.setup(config["ending"])
+		exit_flow = ExitFlow.new()
+		add_child(exit_flow)
+		exit_flow.setup(self, config["ending"], DecoyPlacement.derive_seed(crossing_seed, SALT_EXIT))
+	needs_complete.connect(_on_needs_complete)
+	for t in travelers.values():
+		t.bounds = open_bounds()
 
 
 # ---- Menus (the foraging scene's, with the same keys) ----
@@ -1445,7 +1619,7 @@ func open_notebook(action: String) -> bool:
 
 
 func _panel_allowed() -> bool:
-	return not GameState.is_downed(GameState.controlled) and not pause_menu.is_open and pause_menu.restart_requests == 0 and not restarting and not spelling_hud.is_open() and not hint_hud.is_open() and not discovery_hud.word_select.is_open()
+	return not GameState.is_downed(GameState.controlled) and not pause_menu.is_open and pause_menu.restart_requests == 0 and not restarting and not exit_blocked() and not spelling_hud.is_open() and not hint_hud.is_open() and not discovery_hud.word_select.is_open()
 
 
 func _pause_for_panel() -> void:
@@ -1475,6 +1649,8 @@ func _on_pause_chosen(result: String) -> void:
 ## restores GameState and announces `restarted`.)
 func _restart() -> void:
 	_abandon_downed()
+	if exit_flow != null:
+		exit_flow.clear()
 	GameState.restart_scene()
 	backpack.reset()
 	backpack_hud.refresh()
@@ -1489,6 +1665,16 @@ func _restart() -> void:
 func walk_bounds() -> Rect2:
 	var r := Traveler.RADIUS
 	return Rect2(Vector2(r, -stage_depth / 2.0 + r), Vector2(stage_width - 2.0 * r, stage_depth - 2.0 * r))
+
+
+## Where the travelers may stand now: the whole stage once the needs are met, else the stage
+## short of the cairn's line (an invisible wall they slide along; Prompt 9e).
+func open_bounds() -> Rect2:
+	var full := walk_bounds()
+	if not exit_enabled or needs_finished or not config.has("cairn"):
+		return full
+	var wall := Cairn.wall_z(config)
+	return Rect2(Vector2(full.position.x, wall), Vector2(full.size.x, full.end.y - wall))
 
 
 ## Half the width, in metres, the orthographic camera shows.
