@@ -7,7 +7,9 @@ extends Node
 ## `{action}` tokens that fill() replaces, so a prompt never hardcodes a key.
 ##
 ## Also:
-##   walk_vector(player)   the walking input: constant speed, no analog speed
+##   walk_vector(player)   the walking input: constant speed, no analog speed. The keys plus the
+##                         left stick and D-pad of the player's own pad (P1: device 0, P2: device 1)
+##                         and nothing else (see walk_vector)
 ##   pressed(event, action, echo)   is_action_pressed, but a stick counts once per push
 ##
 ## Glyph choices live in data/series/input_prompts.json.
@@ -15,6 +17,7 @@ extends Node
 signal device_changed(gamepad: bool)
 
 const DATA_PATH := "res://data/series/input_prompts.json"
+const PadDebug := preload("res://scripts/pad_debug.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
 ## True once a gamepad was the last device used; false for keyboard and mouse.
@@ -29,11 +32,27 @@ var _release := 0.3
 var _stick_state: Dictionary = {}
 var _edge_event: InputEvent = null
 var _edge_result := false
+var _walk_deadzone := 0.3
+## Where walk_vector reads the world. The tests replace them; they default to the Input singleton.
+var joy_axis_fn: Callable = func(device: int, axis: int) -> float: return Input.get_joy_axis(device, axis)
+var joy_button_fn: Callable = func(device: int, button: int) -> bool: return Input.is_joy_button_pressed(device, button)
+var joy_connected_fn: Callable = func(device: int) -> bool: return Input.get_connected_joypads().has(device)
+var joy_known_fn: Callable = func(device: int) -> bool: return Input.is_joy_known(device)
+var key_down_fn: Callable = _key_is_down
+## Called with a message for a pad whose mapping is unknown (once per device).
+var warn_fn: Callable = func(text: String) -> void: push_warning(text)
+## device -> true: its stick is ignored for walking until it has been inside the dead zone once.
+var _stick_held: Dictionary = {}
+var _unknown_warned: Dictionary = {}
+var _last_walk_frame := -1000
 
 
 func _ready() -> void:
 	load_data()
 	get_tree().root.window_input.connect(note_event)  # sees events a menu goes on to consume
+	Input.joy_connection_changed.connect(_on_joy_connection_changed)
+	if PadDebug.flag_given():
+		add_child(PadDebug.new())
 
 
 func _input(event: InputEvent) -> void:
@@ -56,6 +75,7 @@ func load_data() -> void:
 	_key_names = data["key_names"]
 	_threshold = float(data["stick_threshold"])
 	_release = float(data["stick_release"])
+	_walk_deadzone = float(data.get("walk_deadzone", 0.3))
 
 
 ## True if the Korean font draws every character of `text`.
@@ -98,6 +118,9 @@ func note_event(event: InputEvent) -> void:
 ## Forgets the last device and every stick push (the tests start from the keyboard).
 func reset() -> void:
 	_stick_state.clear()
+	_stick_held.clear()
+	_unknown_warned.clear()
+	_last_walk_frame = Engine.get_physics_frames()
 	_edge_event = null
 	if gamepad_active:
 		gamepad_active = false
@@ -171,11 +194,80 @@ func _pad_label(action: String) -> String:
 
 # ---- Walking and presses ----
 
-## The walking input of player 1 or 2: a unit vector, or zero. Keys and the stick
-## walk at the same constant speed; a half-pushed stick is no slower.
+## The walking input of player 1 or 2: a unit vector, or zero; keys and pad walk at the same
+## constant speed. Only these count:
+##   the player's keys (the keyboard events of p<N>_left / right / up / down, so remaps follow),
+##   the LEFT stick (JOY_AXIS_LEFT_X / LEFT_Y) of that player's own pad (P1: device 0, P2: device 1),
+##     inside a radial dead zone of walk_deadzone (0.3) = no walking,
+##   the four D-pad buttons of that pad.
+## Every other axis (triggers, which rest at -1 on some drivers, the right stick, raw axes of a pad
+## the engine has no mapping for) and every other device are ignored. A pad Input.is_joy_known says
+## no to is ignored too (one warning). A stick that was held while nobody was walking (a menu was
+## open, the pad was just plugged in) is ignored until it has been inside the dead zone once.
 func walk_vector(player := 1) -> Vector2:
-	var v := Input.get_vector("p%d_left" % player, "p%d_right" % player, "p%d_up" % player, "p%d_down" % player, 0.0)
+	var frame := Engine.get_physics_frames()
+	if frame - _last_walk_frame > 1:  # the scene did not ask last frame: a menu or pause was in the way
+		hold_sticks()
+	_last_walk_frame = frame
+	var v := _key_vector(player) + _pad_vector(player - 1)
 	return v.normalized() if v.length() > 0.001 else Vector2.ZERO
+
+
+## Ignores every stick for walking until it has been inside the dead zone once.
+func hold_sticks() -> void:
+	for device in [0, 1]:
+		_stick_held[device] = true
+
+
+func _key_vector(player: int) -> Vector2:
+	var prefix := "p%d_" % player
+	return Vector2(float(_key_held(prefix + "right")) - float(_key_held(prefix + "left")), float(_key_held(prefix + "down")) - float(_key_held(prefix + "up")))
+
+
+func _key_held(action: String) -> bool:
+	if InputMap.has_action(action):
+		for event in InputMap.action_get_events(action):
+			if event is InputEventKey and key_down_fn.call(event):
+				return true
+	return false
+
+
+func _key_is_down(event: InputEventKey) -> bool:
+	if event.physical_keycode != KEY_NONE:
+		return Input.is_physical_key_pressed(event.physical_keycode)
+	return event.keycode != KEY_NONE and Input.is_key_pressed(event.keycode)
+
+
+func _pad_vector(device: int) -> Vector2:
+	if not joy_connected_fn.call(device):
+		return Vector2.ZERO
+	if not joy_known_fn.call(device):
+		if not _unknown_warned.has(device):
+			_unknown_warned[device] = true
+			warn_fn.call("Gamepad %d has no known mapping (%s): ignored for walking." % [device, Input.get_joy_name(device)])
+		return Vector2.ZERO
+	var stick := Vector2(joy_axis_fn.call(device, JOY_AXIS_LEFT_X), joy_axis_fn.call(device, JOY_AXIS_LEFT_Y))
+	var outside := stick.length() >= _walk_deadzone
+	if _stick_held.get(device, false):
+		if outside:
+			stick = Vector2.ZERO
+		else:
+			_stick_held.erase(device)
+	var v := stick.normalized() if outside and stick != Vector2.ZERO else Vector2.ZERO
+	v.x += float(joy_button_fn.call(device, JOY_BUTTON_DPAD_RIGHT)) - float(joy_button_fn.call(device, JOY_BUTTON_DPAD_LEFT))
+	v.y += float(joy_button_fn.call(device, JOY_BUTTON_DPAD_DOWN)) - float(joy_button_fn.call(device, JOY_BUTTON_DPAD_UP))
+	return v
+
+
+## A pad was plugged in or out: nothing held stays held, and a pad that is just there must have
+## its stick at rest before it walks anyone.
+func _on_joy_connection_changed(device: int, connected: bool) -> void:
+	_stick_state.clear()
+	_stick_held.clear()
+	_unknown_warned.erase(device)
+	_edge_event = null
+	if connected:
+		_stick_held[device] = true
 
 
 ## is_action_pressed(), except that a stick pushed past its dead zone counts as one

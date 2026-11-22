@@ -23,5 +23,6 @@
   },
   "key_names": {"Escape": "Esc", "Period": ".", "Slash": "/"},
   "stick_threshold": 0.5,
-  "stick_release": 0.3
+  "stick_release": 0.3,
+  "walk_deadzone": 0.3
 }

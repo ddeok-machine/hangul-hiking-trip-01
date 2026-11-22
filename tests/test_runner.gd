@@ -182,12 +182,14 @@ const EXPECTED_SECTIONS: Array[String] = [
 	"test_settings_c2",
 	"test_remap_c2",
 	"test_pause_screens_c2",
+	"test_walking_hardening",
+	"test_quit_c2",
 ]
 
 ## The run fails if fewer checks than this ran. After adding tests, raise it to
 ## the printed total minus a small margin (currently 6).
 const RUN_PATH := "user://test_run_settings.cfg"
-const MIN_CHECKS := 5089
+const MIN_CHECKS := 5174
 
 
 func check(condition: bool, label: String) -> void:
@@ -438,6 +440,9 @@ func _ready() -> void:
 	test_settings_c2()
 	test_remap_c2()
 	await test_pause_screens_c2()
+	print("== Walking hardening, --pad-debug and the Quit screen (Prompt C3) ==")
+	test_walking_hardening()
+	await test_quit_c2()
 	Settings.path = Settings.DEFAULT_PATH  # the run's own settings file goes now
 	if FileAccess.file_exists(RUN_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(RUN_PATH))
@@ -4968,6 +4973,8 @@ func test_stuck_real_events() -> void:
 # ---- Pause menu ----
 
 const PauseMenuScript := preload("res://scenes/foraging/pause_menu.gd")
+const QuitMenuScript := preload("res://scenes/foraging/quit_menu.gd")
+const PadDebugScript := preload("res://scripts/pad_debug.gd")
 
 
 func test_pause_menu_data() -> void:
@@ -5013,12 +5020,15 @@ func test_pause_menu_logic() -> void:
 	menu.move(1)
 	check(menu.focus == PauseMenuScript.CONTROLS, "down goes on to Settings and Controls")
 	menu.move(1)
+	check(menu.focus == PauseMenuScript.QUIT, "...and Quit")
+	menu.move(1)
 	check(menu.focus == 0, "down from the last wraps to the first")
 	menu.move(-1)
-	check(menu.focus == PauseMenuScript.CONTROLS, "up from the first wraps to the last")
+	check(menu.focus == PauseMenuScript.QUIT, "up from the first wraps to the last")
 	menu.move(-1)
 	menu.move(-1)
-	check(menu.focus == 1, "two ups from the last come back to Restart scene")
+	menu.move(-1)
+	check(menu.focus == 1, "three ups from the last come back to Restart scene")
 	menu.focus_on(0)
 	menu.focus_on(7)
 	menu.focus_on(-1)
@@ -5230,7 +5240,7 @@ func test_pause_menu_input() -> void:
 	_tap(viewport, KEY_W)
 	check(menu.focus == 0, "P1: W moves it back")
 	_tap(viewport, KEY_W)
-	check(menu.focus == 3, "P1: W from the first wraps to the last (Controls)")
+	check(menu.focus == PauseMenuScript.QUIT, "P1: W from the first wraps to the last (Quit)")
 	_tap(viewport, KEY_S)
 	check(menu.focus == 0, "P1: S from the last wraps to the first")
 	# Player 2: Up/Down move, Enter and KP Enter press.
@@ -5238,7 +5248,7 @@ func test_pause_menu_input() -> void:
 	check(menu.focus == 1, "P2: Down moves the highlight")
 	_tap(viewport, KEY_UP)
 	_tap(viewport, KEY_UP)
-	check(menu.focus == 3, "P2: Up twice wraps")
+	check(menu.focus == PauseMenuScript.QUIT, "P2: Up twice wraps")
 	_tap(viewport, KEY_DOWN)
 	check(menu.focus == 0, "P2: Down wraps")
 	_tap(viewport, KEY_SPACE)
@@ -16644,17 +16654,18 @@ func test_gamepad_bindings() -> void:
 	check(not _pad_axis(JOY_AXIS_LEFT_X, -0.4, 0).is_action_pressed("p1_left") and _pad_axis(JOY_AXIS_LEFT_X, -0.6, 0).is_action_pressed("p1_left"), "a stick pushed 0.4 is inside the dead zone, 0.6 is out")
 	check(InputMap.event_is_action(_pad_button(JOY_BUTTON_START, true, 0), "pause") and InputMap.event_is_action(_pad_button(JOY_BUTTON_START, true, 1), "pause"), "Options pauses from either controller")
 	# Constant speed: a stick half-pushed walks as fast as one pushed to the end, and a diagonal is no faster.
-	Input.action_press("p1_right", 0.3)
+	var walk_axes := {}
+	_walk_fake([], walk_axes, {})
+	walk_axes["0:%d" % JOY_AXIS_LEFT_X] = 0.4
 	check(InputPrompts.walk_vector(1).is_equal_approx(Vector2(1.0, 0.0)), "a light push walks at full speed")
-	Input.action_press("p1_down", 0.3)
+	walk_axes["0:%d" % JOY_AXIS_LEFT_Y] = 0.4
 	var diagonal := InputPrompts.walk_vector(1)
 	check(is_equal_approx(diagonal.length(), 1.0) and is_equal_approx(diagonal.x, diagonal.y), "a diagonal is a unit vector too")
-	Input.action_release("p1_right")
-	Input.action_release("p1_down")
+	walk_axes.clear()
 	check(InputPrompts.walk_vector(1) == Vector2.ZERO and InputPrompts.walk_vector(2) == Vector2.ZERO, "no push: no walking")
-	Input.action_press("p2_left", 1.0)
-	check(InputPrompts.walk_vector(2).is_equal_approx(Vector2(-1.0, 0.0)) and InputPrompts.walk_vector(1) == Vector2.ZERO, "player 2's walking is read from player 2's actions")
-	Input.action_release("p2_left")
+	walk_axes["1:%d" % JOY_AXIS_LEFT_X] = -1.0
+	check(InputPrompts.walk_vector(2).is_equal_approx(Vector2(-1.0, 0.0)) and InputPrompts.walk_vector(1) == Vector2.ZERO, "player 2's walking is read from player 2's own pad")
+	_walk_restore()
 	# A stick is one press per push, not one for each motion event.
 	InputPrompts.reset()
 	var counts: Array[bool] = []
@@ -17186,14 +17197,14 @@ func test_pause_screens_c2() -> void:
 	var screen: Vector2 = viewport.get_visible_rect().size
 	_tap(viewport, KEY_ESCAPE)
 	await _settle_layout()
-	check(menu.is_open and hud._buttons.size() == 4 and hud._buttons[0].text == "Resume" and hud._buttons[1].text == "Restart scene" and hud._buttons[2].text == "Settings" and hud._buttons[3].text == "Controls", "the menu offers Resume, Restart scene, Settings and Controls")
+	check(menu.is_open and hud._buttons.size() == 5 and hud._buttons[0].text == "Resume" and hud._buttons[1].text == "Restart scene" and hud._buttons[2].text == "Settings" and hud._buttons[3].text == "Controls" and hud._buttons[4].text == "Quit", "the menu offers Resume, Restart scene, Settings, Controls and Quit")
 	var panel: Rect2 = hud.panel_rect()
 	var all_inside := true
-	for i in 4:
+	for i in 5:
 		all_inside = all_inside and panel.encloses(hud.button_rect(i)) and hud._buttons[i].visible
 		if i > 0:
 			all_inside = all_inside and not hud.button_rect(i).intersects(hud.button_rect(i - 1))
-	check(all_inside and Rect2(Vector2.ZERO, screen).encloses(panel), "all four buttons are visible, inside the panel and apart")
+	check(all_inside and Rect2(Vector2.ZERO, screen).encloses(panel), "all five buttons are visible, inside the panel and apart")
 
 	# ---- Settings ----
 	_open_pause_screen(viewport, 2)
@@ -17383,3 +17394,354 @@ func test_pause_screens_c2() -> void:
 	InputPrompts.reset()
 	_c2_end()
 	_section_done("test_pause_screens_c2")
+
+
+# ---- Walking hardening, --pad-debug and the pause menu's Quit screen (Prompt C3) ----
+
+var _walk_saved: Dictionary = {}
+var _warnings: Array = []
+
+
+## Walking reads the world through InputPrompts' replaceable readers. `axes` is "device:axis" ->
+## value, `buttons` is "device:button" -> true; both are read live, so a test changes them between calls.
+func _walk_fake(keys: Array, axes: Dictionary, buttons: Dictionary, connected: Array = [0, 1], known: Array = [0, 1]) -> void:
+	if _walk_saved.is_empty():
+		_walk_saved = {"axis": InputPrompts.joy_axis_fn, "button": InputPrompts.joy_button_fn, "connected": InputPrompts.joy_connected_fn, "known": InputPrompts.joy_known_fn, "key": InputPrompts.key_down_fn, "warn": InputPrompts.warn_fn}
+	_warnings.clear()
+	InputPrompts.joy_axis_fn = func(device: int, axis: int) -> float: return float(axes.get("%d:%d" % [device, axis], 0.0))
+	InputPrompts.joy_button_fn = func(device: int, button: int) -> bool: return buttons.get("%d:%d" % [device, button], false)
+	InputPrompts.joy_connected_fn = func(device: int) -> bool: return connected.has(device)
+	InputPrompts.joy_known_fn = func(device: int) -> bool: return known.has(device)
+	InputPrompts.key_down_fn = func(event: InputEventKey) -> bool: return keys.has(event.physical_keycode)
+	InputPrompts.warn_fn = func(text: String) -> void: _warnings.append(text)
+	InputPrompts.reset()
+
+
+func _walk_restore() -> void:
+	if not _walk_saved.is_empty():
+		InputPrompts.joy_axis_fn = _walk_saved["axis"]
+		InputPrompts.joy_button_fn = _walk_saved["button"]
+		InputPrompts.joy_connected_fn = _walk_saved["connected"]
+		InputPrompts.joy_known_fn = _walk_saved["known"]
+		InputPrompts.key_down_fn = _walk_saved["key"]
+		InputPrompts.warn_fn = _walk_saved["warn"]
+		_walk_saved = {}
+	InputPrompts.reset()
+
+
+func _walks(player: int, expected: Vector2) -> bool:
+	return InputPrompts.walk_vector(player).is_equal_approx(expected)
+
+
+func test_walking_hardening() -> void:
+	var keys: Array = []
+	var axes: Dictionary = {}
+	var buttons: Dictionary = {}
+	_walk_fake(keys, axes, buttons)
+	check(_walks(1, Vector2.ZERO) and _walks(2, Vector2.ZERO), "nothing pushed: nobody walks")
+	# Only LEFT_X / LEFT_Y walk.
+	var ignored := true
+	for axis in [JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, JOY_AXIS_TRIGGER_LEFT, JOY_AXIS_TRIGGER_RIGHT, 6, 7, 8, 9]:
+		for value in [1.0, -1.0, 0.5]:
+			axes.clear()
+			axes["0:%d" % axis] = value
+			ignored = ignored and _walks(1, Vector2.ZERO) and _walks(2, Vector2.ZERO)
+	check(ignored, "no axis but the left stick's X and Y gives walking, whatever its value")
+	axes.clear()
+	axes["0:%d" % JOY_AXIS_TRIGGER_LEFT] = -1.0
+	axes["0:%d" % JOY_AXIS_TRIGGER_RIGHT] = -1.0
+	check(_walks(1, Vector2.ZERO), "triggers stuck at -1 (a driver's resting value) walk nobody")
+	axes.clear()
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 0.12
+	axes["0:%d" % JOY_AXIS_LEFT_Y] = -0.2
+	check(_walks(1, Vector2.ZERO), "rest noise inside the dead zone (length 0.23) gives zero")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 0.2
+	axes["0:%d" % JOY_AXIS_LEFT_Y] = 0.2
+	check(_walks(1, Vector2.ZERO), "a stick at (0.2, 0.2), length 0.28, is still inside")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 0.29
+	axes["0:%d" % JOY_AXIS_LEFT_Y] = 0.0
+	check(_walks(1, Vector2.ZERO), "0.29 is inside")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 0.31
+	check(_walks(1, Vector2(1.0, 0.0)), "0.31 is out: a full-speed step right")
+	# A full push is a unit vector, in every direction.
+	var dirs_ok := true
+	for case in [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [1.0, 1.0], [-0.7, 0.7], [0.5, -0.1]]:
+		axes["0:%d" % JOY_AXIS_LEFT_X] = case[0]
+		axes["0:%d" % JOY_AXIS_LEFT_Y] = case[1]
+		var v := InputPrompts.walk_vector(1)
+		dirs_ok = dirs_ok and is_equal_approx(v.length(), 1.0) and v.dot(Vector2(case[0], case[1]).normalized()) > 0.9999
+	check(dirs_ok, "any stick push past the dead zone is a unit vector in its own direction (constant speed)")
+	axes.clear()
+	# The D-pad.
+	buttons["0:%d" % JOY_BUTTON_DPAD_RIGHT] = true
+	check(_walks(1, Vector2(1.0, 0.0)) and _walks(2, Vector2.ZERO), "D-pad right of device 0 walks player 1 right")
+	buttons.clear()
+	buttons["0:%d" % JOY_BUTTON_DPAD_UP] = true
+	buttons["0:%d" % JOY_BUTTON_DPAD_LEFT] = true
+	check(InputPrompts.walk_vector(1).is_equal_approx(Vector2(-1.0, -1.0).normalized()), "D-pad up + left is a unit diagonal")
+	buttons["0:%d" % JOY_BUTTON_DPAD_RIGHT] = true
+	check(_walks(1, Vector2(0.0, -1.0)), "left and right together cancel")
+	buttons.clear()
+	buttons["0:%d" % JOY_BUTTON_A] = true
+	buttons["0:%d" % JOY_BUTTON_LEFT_SHOULDER] = true
+	check(_walks(1, Vector2.ZERO), "other buttons walk nobody")
+	buttons.clear()
+	# Devices: each player has their own.
+	axes["1:%d" % JOY_AXIS_LEFT_X] = 1.0
+	check(_walks(1, Vector2.ZERO) and _walks(2, Vector2(1.0, 0.0)), "device 1's stick does not move player 1; it moves player 2")
+	axes.clear()
+	axes["2:%d" % JOY_AXIS_LEFT_X] = 1.0
+	check(_walks(1, Vector2.ZERO) and _walks(2, Vector2.ZERO), "a third device walks nobody")
+	axes.clear()
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 1.0
+	_walk_fake(keys, axes, buttons, [])
+	check(_walks(1, Vector2.ZERO), "a stick value left behind by a device that is not connected walks nobody")
+	# An unknown mapping is ignored, with one warning.
+	_walk_fake(keys, axes, buttons, [0, 1], [1])
+	check(_walks(1, Vector2.ZERO) and _walks(1, Vector2.ZERO) and _walks(1, Vector2.ZERO) and _warnings.size() == 1 and _warnings[0].contains("no known mapping"), "a pad the engine has no mapping for is ignored, with one warning (%d)" % _warnings.size())
+	buttons["0:%d" % JOY_BUTTON_DPAD_LEFT] = true
+	check(_walks(1, Vector2.ZERO), "...its D-pad too")
+	buttons.clear()
+	# The keyboard.
+	axes.clear()
+	_walk_fake(keys, axes, buttons)
+	keys.append(KEY_D)
+	check(_walks(1, Vector2(1.0, 0.0)) and _walks(2, Vector2.ZERO), "D walks player 1 right")
+	keys.append(KEY_W)
+	check(InputPrompts.walk_vector(1).is_equal_approx(Vector2(1.0, -1.0).normalized()), "D + W is a unit diagonal")
+	keys.clear()
+	keys.append(KEY_LEFT)
+	check(_walks(2, Vector2(-1.0, 0.0)) and _walks(1, Vector2.ZERO), "the Left arrow walks player 2 left")
+	var remapped: Dictionary = Settings.remap.bind_key("p1_right", _key_event(KEY_J))
+	keys.clear()
+	keys.append(KEY_J)
+	check(remapped["result"] == "ok" and _walks(1, Vector2(1.0, 0.0)), "a remapped movement key walks")
+	keys.clear()
+	keys.append(KEY_D)
+	check(_walks(1, Vector2.ZERO), "...and the old key no longer does")
+	Settings.remap.reset_all()
+	# After a menu: a held stick waits for the dead zone.
+	keys.clear()
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 1.0
+	check(_walks(1, Vector2(1.0, 0.0)), "(setup) a stick pushed right walks")
+	InputPrompts.hold_sticks()
+	check(_walks(1, Vector2.ZERO), "after a menu closed, the stick still held does not walk")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 0.2
+	check(_walks(1, Vector2.ZERO), "...it comes back inside the dead zone once...")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 1.0
+	check(_walks(1, Vector2(1.0, 0.0)), "...and then walks again")
+	InputPrompts.hold_sticks()
+	buttons["0:%d" % JOY_BUTTON_DPAD_DOWN] = true
+	check(InputPrompts.walk_vector(1).is_equal_approx(Vector2(0.0, 1.0)), "the hold is for the stick: the D-pad still walks (the stick is ignored)")
+	buttons.clear()
+	axes.clear()
+	check(_walks(1, Vector2.ZERO), "(neutral)")
+	axes["0:%d" % JOY_AXIS_LEFT_Y] = 1.0
+	check(_walks(1, Vector2(0.0, 1.0)), "a stick pushed after the neutral walks")
+	# The scene not asking for a few frames (a menu or pause) is a menu closing.
+	InputPrompts._last_walk_frame = Engine.get_physics_frames() - 5
+	check(_walks(1, Vector2.ZERO), "frames without a walk_vector call (the tree was paused) hold the stick until neutral")
+	axes.clear()
+	check(_walks(1, Vector2.ZERO), "(neutral again)")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = -1.0
+	check(_walks(1, Vector2(-1.0, 0.0)), "...and it walks after that")
+	# A pad plugged in or out.
+	InputPrompts.hold_sticks()
+	InputPrompts._stick_state["0:0"] = 1
+	Input.joy_connection_changed.emit(0, false)
+	check(InputPrompts._stick_held.is_empty() and InputPrompts._stick_state.is_empty(), "joy_connection_changed (unplugged) clears the held state")
+	check(_walks(1, Vector2(-1.0, 0.0)), "(a stick that stays pushed on a pad still there walks: nothing is held)")
+	Input.joy_connection_changed.emit(0, true)
+	check(_walks(1, Vector2.ZERO), "a pad plugged in with its stick pushed does not walk")
+	axes.clear()
+	check(_walks(1, Vector2.ZERO), "...until it is at rest")
+	axes["0:%d" % JOY_AXIS_LEFT_X] = 1.0
+	check(_walks(1, Vector2(1.0, 0.0)), "(and then walks)")
+	# The Input Map keeps its pad events, each tied to one device; none is on a trigger or the other stick.
+	var tied := true
+	var wrong_axis := false
+	for player in [1, 2]:
+		for direction in ["left", "right", "up", "down"]:
+			for event in InputMap.action_get_events("p%d_%s" % [player, direction]):
+				if event is InputEventJoypadMotion or event is InputEventJoypadButton:
+					tied = tied and event.device == player - 1
+					if event is InputEventJoypadMotion:
+						wrong_axis = wrong_axis or (event.axis != JOY_AXIS_LEFT_X and event.axis != JOY_AXIS_LEFT_Y)
+	check(tied and not wrong_axis, "every pad event of p1_* is device 0 and of p2_* device 1, on the left stick only")
+	_walk_restore()
+	# The two scenes read walking from walk_vector.
+	for path in ["res://scenes/foraging/foraging.gd", "res://scenes/animals/animals.gd"]:
+		var source := FileAccess.get_file_as_string(path)
+		check(source.contains("InputPrompts.walk_vector(1)") and not source.contains("Input.get_vector") and not source.contains("get_action_strength(\"p"), "%s walks by walk_vector only" % path)
+
+	# ---- --pad-debug ----
+	check(not PadDebugScript.flag_given() and InputPrompts.get_children().all(func(c): return c.get_script() != PadDebugScript), "without the flag no debug node runs")
+	var dbg = PadDebugScript.new()
+	var lines: Array = []
+	dbg.sink = func(text: String) -> void: lines.append(text)
+	dbg.print_startup()
+	check(lines.size() >= 1 and lines[0].contains("pad_debug.log") and lines[0].contains("pad-debug on"), "startup prints the log path first (%s)" % lines[0])
+	check(lines.size() == 1 + maxi(1, Input.get_connected_joypads().size()), "...then one line per connected device (or 'none')")
+	var allowed: Array[bool] = []
+	for t in [0.0, 0.1, 0.2, 0.3, 0.4, 0.9, 1.05, 1.1]:
+		allowed.append(dbg.allow(t))
+	check(allowed == [true, true, true, true, false, false, true, true], "at most 4 lines a second (%s)" % str(allowed))
+	dbg = PadDebugScript.new()
+	lines.clear()
+	dbg.sink = func(text: String) -> void: lines.append(text)
+	axes.clear()
+	_walk_fake(keys, axes, buttons)
+	axes["0:%d" % JOY_AXIS_LEFT_X] = -0.9
+	axes["0:%d" % JOY_AXIS_TRIGGER_LEFT] = -1.0
+	dbg.scan(10.0)
+	check(lines.size() == 1 and lines[0] == "p1_left <- device 0 axis 0 raw -0.900", "a push of the left stick is logged with its device, axis, raw value and action (%s)" % str(lines))
+	lines.clear()
+	buttons["1:%d" % JOY_BUTTON_DPAD_UP] = true
+	keys.append(KEY_A)
+	dbg.scan(10.2)
+	check(lines.has("p1_left <- key A") and lines.has("p1_left <- device 0 axis 0 raw -0.900") and lines.has("p2_up <- device 1 button 11 raw 1"), "a key, a stick and a D-pad button are each named (%s)" % str(lines))
+	lines.clear()
+	for i in 5:
+		dbg.scan(11.0 + 0.01 * i)
+	check(lines.size() == 4, "scanning five times in one second prints four lines, no more (%d)" % lines.size())
+	lines.clear()
+	axes.clear()
+	buttons.clear()
+	keys.clear()
+	dbg.scan(20.0)
+	check(lines.is_empty(), "nothing walking: nothing printed")
+	dbg.free()
+	_walk_restore()
+	_section_done("test_walking_hardening")
+
+
+func test_quit_c2() -> void:
+	_c2_begin()
+	# The rules, without nodes.
+	var quit = QuitMenuScript.new()
+	check(quit.rows.map(func(r): return r["id"]) == ["main_menu", "desktop"] and quit.rows[0]["label"] == "Exit to Main Menu" and quit.rows[1]["label"] == "Quit to Desktop", "the Quit screen has Exit to Main Menu and Quit to Desktop (from data)")
+	check(QuitMenuScript.new([], true).rows.map(func(r): return r["id"]) == ["main_menu"], "on the web, Quit to Desktop is not offered")
+	check(quit.notice() == "" and quit.activate() == "asked" and quit.notice().contains("Progress is lost"), "the first press only asks, and the notice says that progress is lost")
+	check(quit.activate() == "main_menu" and quit.notice() == "", "the second press on the same item does it")
+	check(quit.activate() == "asked", "and it asks again afterwards")
+	quit.move(1)
+	check(quit.focus == 1 and quit.notice() == "" and quit.activate() == "asked", "moving to another item disarms: it asks first")
+	quit.move(-1)
+	check(quit.activate() == "asked", "...coming back asks again")
+	quit.focus_on(1)
+	check(quit.activate() == "asked" and quit.activate() == "desktop", "the desktop item needs two presses as well")
+	var menu_logic = PauseMenuScript.new()
+	check(PauseMenuScript.COUNT == 5 and PauseMenuScript.RESTART == 1 and PauseMenuScript.QUIT == 4 and PauseMenuScript.RESUME == 0 and PauseMenuScript.SETTINGS == 2 and PauseMenuScript.CONTROLS == 3, "five entries in the order Resume, Restart scene (1), Settings, Controls, Quit")
+	menu_logic.open(true)
+	menu_logic.move(-1)
+	check(menu_logic.focus == PauseMenuScript.QUIT, "up from Resume wraps to Quit")
+	check(menu_logic.activate() == "quit" and menu_logic.sub == "quit", "Quit opens its screen")
+	check(menu_logic.escape(false) == "back" and menu_logic.sub == "" and menu_logic.is_open and menu_logic.focus == PauseMenuScript.QUIT, "Esc leaves it one level, on Quit")
+	menu_logic.move(1)
+	check(menu_logic.focus == 0, "down from Quit wraps to Resume")
+
+	# On screen, in the foraging scene.
+	var counts := {"menu": 0, "quit": 0}
+	var paths: Array = []
+	GameState.main_menu_fn = func(path: String) -> void:
+		counts["menu"] += 1
+		paths.append(path)
+	GameState.quit_fn = func() -> void: counts["quit"] += 1
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	var map: Node3D = await _stuck_map()
+	var viewport := map.get_viewport()
+	var menu = map.pause_menu
+	var hud = map.pause_hud
+	_tap_pad(viewport, JOY_BUTTON_START)
+	await _settle_layout()
+	check(hud._buttons.size() == 5 and hud._buttons[1].text == "Restart scene" and hud._buttons[4].text == "Quit", "the menu shows five buttons, Quit last, Restart scene still second")
+	var panel: Rect2 = hud.panel_rect()
+	var inside := true
+	for i in 5:
+		inside = inside and panel.encloses(hud.button_rect(i)) and (i == 0 or not hud.button_rect(i).intersects(hud.button_rect(i - 1)))
+	check(inside, "all five buttons are inside the panel and apart")
+	GameState.ddeok = 77
+	GameState.damage_units("nestor", 2)
+	_open_pause_screen(viewport, 4)
+	await _settle_layout()
+	var logic = hud.quit_logic()
+	check(menu.sub == "quit" and hud.title_text().contains("Quit") and hud.sub_row_count() == 2 and logic != null and not hud._buttons[0].visible, "Cross on Quit opens the Quit screen with two items")
+	check(Rect2(Vector2.ZERO, viewport.get_visible_rect().size).encloses(hud.panel_rect()), "the Quit panel is on the screen")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["menu"] == 0 and counts["quit"] == 0 and hud.notice_text().contains("Progress is lost"), "the first Cross on Exit to Main Menu only asks")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(hud.notice_text() == "" and logic.focus == 1, "moving away takes the question back")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["quit"] == 0 and hud.notice_text() != "", "the first Cross on Quit to Desktop only asks")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["quit"] == 1 and counts["menu"] == 0 and not get_tree().paused, "the second Cross quits to the desktop, once (through the injected function), the tree unpaused")
+	get_tree().paused = true  # the injected quit did not end the run
+	_tap_pad(viewport, JOY_BUTTON_DPAD_UP)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["menu"] == 0, "Exit to Main Menu asked again after the move")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["menu"] == 1 and counts["quit"] == 1 and paths == ["res://scenes/main_menu/main_menu.tscn"] and not get_tree().paused, "the second Cross exits to the main menu scene, once, unpaused")
+	check(GameState.ddeok == int(Content.rules.get("starting_ddeok_without_save", 0)) and GameState.heart_units["nestor"] == GameState.max_units(), "the game state was reset (a new hike)")
+	# Back out, one level at a time.
+	get_tree().paused = true
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(menu.is_open and menu.sub == "" and menu.focus == PauseMenuScript.QUIT and counts["menu"] == 1, "Circle goes back from the Quit screen to the menu, on Quit")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["menu"] == 1, "(an armed item does not survive leaving the screen: it asked again)")
+	_tap(viewport, KEY_ESCAPE)
+	check(menu.is_open and menu.sub == "" and menu.focus == PauseMenuScript.QUIT, "Esc goes back too")
+	_tap(viewport, KEY_ENTER)
+	_tap(viewport, KEY_ENTER)
+	check(counts["menu"] == 1 and menu.sub == "quit", "Enter asks (the keyboard)")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not menu.is_open and not get_tree().paused and counts["menu"] == 1 and counts["quit"] == 1, "Options closes the whole menu from the Quit screen, quitting nothing")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_UP)
+	_tap(viewport, KEY_SPACE)
+	_tap(viewport, KEY_SPACE)
+	_tap(viewport, KEY_SPACE)
+	check(counts["menu"] == 2 and paths.size() == 2, "from the keyboard: Up, Space, Space, Space exits to the main menu (Space opens, asks, confirms)")
+	map.free()
+	get_tree().paused = false
+
+	# The animal scene: the same.
+	GameState.new_hike()
+	map = await _animals_map(5)
+	viewport = map.get_viewport()
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_open_pause_screen(viewport, 4)
+	check(map.pause_menu.sub == "quit" and map.pause_hud.sub_row_count() == 2, "animals: the Quit screen opens")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(counts["menu"] == 3 and counts["quit"] == 1 and not get_tree().paused, "animals: exit to the main menu, once")
+	map.free()
+	get_tree().paused = false
+	GameState.main_menu_fn = Callable(GameState, "_change_scene")
+	GameState.quit_fn = Callable(GameState, "_quit_game")
+	GameState.new_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+
+	# The placeholder main menu.
+	var main: Control = load("res://scenes/main_menu/main_menu.tscn").instantiate()
+	var started: Array = []
+	var quit_calls: Array = []
+	add_child(main)
+	main.start_fn = func(path: String) -> void: started.append(path)
+	main.quit_fn = func() -> void: quit_calls.append(true)
+	await get_tree().process_frame
+	var title_ok := false
+	for node in main.find_children("*", "Label", true, false):
+		title_ok = title_ok or node.text == "한글 등산 · Hangul Hiking Trip"
+	check(title_ok, "the main menu shows the title from data")
+	check(main.start_button != null and main.start_button.text == "Start" and main.quit_button != null and main.quit_button.text == "Quit to Desktop", "it has Start and Quit to Desktop")
+	main.start_button.pressed.emit()
+	check(started == ["res://scenes/foraging/foraging.tscn"], "Start goes to the Hallasan foraging scene")
+	main.quit_button.pressed.emit()
+	check(quit_calls.size() == 1, "Quit to Desktop quits, once")
+	main.free()
+	_c2_end()
+	_section_done("test_quit_c2")

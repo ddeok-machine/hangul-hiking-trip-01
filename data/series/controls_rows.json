@@ -1,206 +1,218 @@
 {
- "_note": "Rows of the pause menu's Settings and Controls screens (scripts/remap.gd, scenes/foraging/settings_menu.gd, controls_menu.gd). settings_rows: type volume (a 0-10 step, 0 mutes), toggle (labels = [off, on]) or back; hide_on_web drops a row in a web export. controls_rows: one remappable action each; slots are 'key' (keyboard) and/or 'pad' (gamepad button); device is the gamepad (0 = player 1, 1 = player 2) the pad slot belongs to. Not listed means not remappable: pause, ui_*, select_*, F9, backpack_p2, notebook_p2 and the gamepad sticks and D-pads. reserved_actions: an input that one of them holds, and that is no remappable action's default, cannot be bound (the menu can never be locked out). capture_timeout_s: how long 'Press a key...' waits. message_s: how long a notice stays up.",
- "settings_rows": [
-  {
-   "id": "master",
-   "type": "volume",
-   "label": "Master volume"
+  "_note": "Rows of the pause menu's Settings and Controls screens (scripts/remap.gd, scenes/foraging/settings_menu.gd, controls_menu.gd). settings_rows: type volume (a 0-10 step, 0 mutes), toggle (labels = [off, on]) or back; hide_on_web drops a row in a web export. controls_rows: one remappable action each; slots are 'key' (keyboard) and/or 'pad' (gamepad button); device is the gamepad (0 = player 1, 1 = player 2) the pad slot belongs to. Not listed means not remappable: pause, ui_*, select_*, F9, backpack_p2, notebook_p2 and the gamepad sticks and D-pads. reserved_actions: an input that one of them holds, and that is no remappable action's default, cannot be bound (the menu can never be locked out). capture_timeout_s: how long 'Press a key...' waits. message_s: how long a notice stays up.",
+  "settings_rows": [
+    {
+      "id": "master",
+      "type": "volume",
+      "label": "Master volume"
+    },
+    {
+      "id": "music",
+      "type": "volume",
+      "label": "Music volume"
+    },
+    {
+      "id": "sfx",
+      "type": "volume",
+      "label": "Effects volume"
+    },
+    {
+      "id": "fullscreen",
+      "type": "toggle",
+      "label": "Display",
+      "labels": [
+        "Windowed",
+        "Fullscreen"
+      ],
+      "hide_on_web": true
+    },
+    {
+      "id": "vibration",
+      "type": "toggle",
+      "label": "Vibration",
+      "labels": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "id": "back",
+      "type": "back",
+      "label": "Back"
+    }
+  ],
+  "controls_rows": [
+    {
+      "action": "p1_up",
+      "label": "Player 1 up",
+      "slots": [
+        "key"
+      ],
+      "device": 0
+    },
+    {
+      "action": "p1_down",
+      "label": "Player 1 down",
+      "slots": [
+        "key"
+      ],
+      "device": 0
+    },
+    {
+      "action": "p1_left",
+      "label": "Player 1 left",
+      "slots": [
+        "key"
+      ],
+      "device": 0
+    },
+    {
+      "action": "p1_right",
+      "label": "Player 1 right",
+      "slots": [
+        "key"
+      ],
+      "device": 0
+    },
+    {
+      "action": "p2_up",
+      "label": "Player 2 up",
+      "slots": [
+        "key"
+      ],
+      "device": 1
+    },
+    {
+      "action": "p2_down",
+      "label": "Player 2 down",
+      "slots": [
+        "key"
+      ],
+      "device": 1
+    },
+    {
+      "action": "p2_left",
+      "label": "Player 2 left",
+      "slots": [
+        "key"
+      ],
+      "device": 1
+    },
+    {
+      "action": "p2_right",
+      "label": "Player 2 right",
+      "slots": [
+        "key"
+      ],
+      "device": 1
+    },
+    {
+      "action": "p1_pick",
+      "label": "Player 1 grab / pick / confirm",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    },
+    {
+      "action": "p2_pick",
+      "label": "Player 2 grab / pick / confirm",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 1
+    },
+    {
+      "action": "spell_open",
+      "label": "Spell / give",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    },
+    {
+      "action": "tool_next",
+      "label": "Next tool",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    },
+    {
+      "action": "tool_prev",
+      "label": "Previous tool",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    },
+    {
+      "action": "backpack_p1",
+      "label": "Backpack",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    },
+    {
+      "action": "notebook_p1",
+      "label": "Notebook (수첩)",
+      "slots": [
+        "key",
+        "pad"
+      ],
+      "device": 0
+    }
+  ],
+  "controls_tail": [
+    {
+      "id": "reset",
+      "label": "Reset to defaults"
+    },
+    {
+      "id": "back",
+      "label": "Back"
+    }
+  ],
+  "reserved_actions": [
+    "pause",
+    "ui_cancel",
+    "ui_accept",
+    "ui_up",
+    "ui_down",
+    "ui_left",
+    "ui_right",
+    "select_cancel"
+  ],
+  "capture_timeout_s": 5.0,
+  "message_s": 2.5,
+  "texts": {
+    "keyboard_slot": "Keyboard",
+    "pad_slot": "Pad",
+    "press_key": "Press a key...",
+    "press_button": "Press a button...",
+    "reserved": "That input is reserved.",
+    "swapped": "Swapped with {other}.",
+    "confirm_reset": "Press Cross or Enter again to reset all controls.",
+    "reset_done": "Controls reset to defaults.",
+    "none": "-",
+    "confirm_quit": "Progress is lost. Press Cross or Enter again to confirm."
   },
-  {
-   "id": "music",
-   "type": "volume",
-   "label": "Music volume"
-  },
-  {
-   "id": "sfx",
-   "type": "volume",
-   "label": "Effects volume"
-  },
-  {
-   "id": "fullscreen",
-   "type": "toggle",
-   "label": "Display",
-   "labels": [
-    "Windowed",
-    "Fullscreen"
-   ],
-   "hide_on_web": true
-  },
-  {
-   "id": "vibration",
-   "type": "toggle",
-   "label": "Vibration",
-   "labels": [
-    "Off",
-    "On"
-   ]
-  },
-  {
-   "id": "back",
-   "type": "back",
-   "label": "Back"
-  }
- ],
- "controls_rows": [
-  {
-   "action": "p1_up",
-   "label": "Player 1 up",
-   "slots": [
-    "key"
-   ],
-   "device": 0
-  },
-  {
-   "action": "p1_down",
-   "label": "Player 1 down",
-   "slots": [
-    "key"
-   ],
-   "device": 0
-  },
-  {
-   "action": "p1_left",
-   "label": "Player 1 left",
-   "slots": [
-    "key"
-   ],
-   "device": 0
-  },
-  {
-   "action": "p1_right",
-   "label": "Player 1 right",
-   "slots": [
-    "key"
-   ],
-   "device": 0
-  },
-  {
-   "action": "p2_up",
-   "label": "Player 2 up",
-   "slots": [
-    "key"
-   ],
-   "device": 1
-  },
-  {
-   "action": "p2_down",
-   "label": "Player 2 down",
-   "slots": [
-    "key"
-   ],
-   "device": 1
-  },
-  {
-   "action": "p2_left",
-   "label": "Player 2 left",
-   "slots": [
-    "key"
-   ],
-   "device": 1
-  },
-  {
-   "action": "p2_right",
-   "label": "Player 2 right",
-   "slots": [
-    "key"
-   ],
-   "device": 1
-  },
-  {
-   "action": "p1_pick",
-   "label": "Player 1 grab / pick / confirm",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  },
-  {
-   "action": "p2_pick",
-   "label": "Player 2 grab / pick / confirm",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 1
-  },
-  {
-   "action": "spell_open",
-   "label": "Spell / give",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  },
-  {
-   "action": "tool_next",
-   "label": "Next tool",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  },
-  {
-   "action": "tool_prev",
-   "label": "Previous tool",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  },
-  {
-   "action": "backpack_p1",
-   "label": "Backpack",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  },
-  {
-   "action": "notebook_p1",
-   "label": "Notebook (수첩)",
-   "slots": [
-    "key",
-    "pad"
-   ],
-   "device": 0
-  }
- ],
- "controls_tail": [
-  {
-   "id": "reset",
-   "label": "Reset to defaults"
-  },
-  {
-   "id": "back",
-   "label": "Back"
-  }
- ],
- "reserved_actions": [
-  "pause",
-  "ui_cancel",
-  "ui_accept",
-  "ui_up",
-  "ui_down",
-  "ui_left",
-  "ui_right",
-  "select_cancel"
- ],
- "capture_timeout_s": 5.0,
- "message_s": 2.5,
- "texts": {
-  "keyboard_slot": "Keyboard",
-  "pad_slot": "Pad",
-  "press_key": "Press a key...",
-  "press_button": "Press a button...",
-  "reserved": "That input is reserved.",
-  "swapped": "Swapped with {other}.",
-  "confirm_reset": "Press Cross or Enter again to reset all controls.",
-  "reset_done": "Controls reset to defaults.",
-  "none": "-"
- }
+  "quit_rows": [
+    {
+      "id": "main_menu",
+      "label": "Exit to Main Menu"
+    },
+    {
+      "id": "desktop",
+      "label": "Quit to Desktop",
+      "hide_on_web": true
+    }
+  ]
 }

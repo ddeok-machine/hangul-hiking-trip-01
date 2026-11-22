@@ -181,6 +181,35 @@ func restart_scene() -> void:
 	ddeok_changed.emit(ddeok)
 
 
+## What the pause menu's Quit screen does. The tests replace both functions, so nothing ever
+## really quits or changes scene there.
+var main_menu_fn: Callable = _change_scene  ## called with the main menu scene's path
+var quit_fn: Callable = _quit_game
+
+
+## Pause menu, Quit, Exit to Main Menu: unpauses, a new hike (the state a new game has; progress is
+## lost) and the main menu scene (data/series/main_menu.json).
+func exit_to_main_menu() -> void:
+	get_tree().paused = false
+	new_hike()
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/series/main_menu.json"))
+	main_menu_fn.call(String((parsed as Dictionary).get("main_menu_scene", "")) if parsed is Dictionary else "")
+
+
+## Pause menu, Quit, Quit to Desktop.
+func quit_to_desktop() -> void:
+	get_tree().paused = false
+	quit_fn.call()
+
+
+func _change_scene(path: String) -> void:
+	get_tree().change_scene_to_file(path)
+
+
+func _quit_game() -> void:
+	get_tree().quit()
+
+
 ## A wrong or too-slow answer: exactly one whole heart. Returns true if this hit killed them both.
 func damage(traveler: String, injury: String) -> bool:
 	return damage_units(traveler, units_per_heart(), injury)

@@ -4,26 +4,30 @@ extends RefCounted
 ## decides whether it may open (`allowed`) and does the pausing and the restart.
 ##
 ## Screens:
-##   menu      0 Resume, 1 Restart scene, 2 Settings, 3 Controls
+##   menu      0 Resume, 1 Restart scene, 2 Settings, 3 Controls, 4 Quit
 ##   confirm   0 Yes, 1 No          ("Restart? Progress in this scene is lost.")
 ##   settings  the Settings screen (`sub` is "settings"; its rows are SettingsMenu's)
 ##   controls  the Controls screen (`sub` is "controls"; its rows are ControlsMenu's)
+##   quit      the Quit screen (`sub` is "quit"; Exit to Main Menu / Quit to Desktop, QuitMenu's)
 ## The focus wraps. A new screen starts on Resume (menu) or on No (confirm, so a
 ## double tap of the pick key cannot throw the scene away). Leaving a sub screen puts the
 ## focus back on its entry.
 
-const COUNT := 4
+const COUNT := 5
 const CONFIRM_COUNT := 2
 const RESUME := 0
 const RESTART := 1
 const SETTINGS := 2
 const CONTROLS := 3
+const QUIT := 4
+## The sub screen each of those entries opens.
+const SUBS := {SETTINGS: "settings", CONTROLS: "controls", QUIT: "quit"}
 const YES := 0
 const NO := 1
 
 var is_open := false
 var confirming := false
-## "" on the menu and the confirmation, else "settings" or "controls".
+## "" on the menu and the confirmation, else "settings", "controls" or "quit".
 var sub := ""
 var focus := RESUME
 ## How many times Yes was chosen. It is 1 at most: a restart is asked for once.
@@ -75,8 +79,8 @@ func activate() -> String:
 		if focus == RESUME:
 			close()
 			return "resume"
-		if focus == SETTINGS or focus == CONTROLS:
-			sub = "settings" if focus == SETTINGS else "controls"
+		if SUBS.has(focus):
+			sub = SUBS[focus]
 			return sub
 		confirming = true
 		focus = NO
@@ -95,7 +99,7 @@ func activate() -> String:
 func leave_sub() -> bool:
 	if sub == "":
 		return false
-	focus = SETTINGS if sub == "settings" else CONTROLS
+	focus = SUBS.find_key(sub)
 	sub = ""
 	return true
 

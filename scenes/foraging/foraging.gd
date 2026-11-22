@@ -1703,6 +1703,10 @@ func _on_pause_chosen(result: String) -> void:
 		_silence_music(false)
 	if result == "restart":
 		_restart()  # the death path's own restart, without the beat
+	elif result == "main_menu":
+		GameState.exit_to_main_menu()
+	elif result == "desktop":
+		GameState.quit_to_desktop()
 
 
 ## Holds the countdown music still (its position and fade stay where they were)

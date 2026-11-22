@@ -1,6 +1,6 @@
 extends CanvasLayer
-## The pause menu's look: a centred panel with a title and four buttons (Resume, Restart scene,
-## Settings, Controls), over a light dim of the map. Settings and Controls are screens of their
+## The pause menu's look: a centred panel with a title and five buttons (Resume, Restart scene,
+## Settings, Controls, Quit), over a light dim of the map. Settings, Controls and Quit are screens of their
 ## own in the same panel: rows of Control nodes (name, slider or value, key and button slots)
 ## built from data/series/controls_rows.json, with the same look as the buttons. Drawn in code,
 ## no art files. It runs while the tree is paused (process mode ALWAYS). Closed, its root is
@@ -14,10 +14,11 @@ extends CanvasLayer
 const PauseMenu := preload("res://scenes/foraging/pause_menu.gd")
 const SettingsMenu := preload("res://scenes/foraging/settings_menu.gd")
 const ControlsMenu := preload("res://scenes/foraging/controls_menu.gd")
+const QuitMenu := preload("res://scenes/foraging/quit_menu.gd")
 const SpellingCursor := preload("res://scenes/foraging/spelling_cursor.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
-signal chosen(result: String)  ## what PauseMenu.activate() or escape() returned: "resume", "ask", "restart", "back", "settings", "controls"
+signal chosen(result: String)  ## what PauseMenu.activate() or escape() returned: "resume", "ask", "restart", "back", "settings", "controls", "quit", "main_menu", "desktop"
 
 const TITLE_FONT_SIZE := 30
 const BUTTON_FONT_SIZE := 24
@@ -45,6 +46,7 @@ var _notice: Label
 var _built := ""  # which sub screen the row nodes are built for
 var _settings
 var _controls
+var _quit
 var _row_nodes: Array = []  # per row: {"panel", "name", "value", "slider", "key", "pad"}
 var _row_height := 40.0
 var _row_font_size := 20
@@ -155,8 +157,8 @@ func refresh() -> void:
 	_title.text = str(_config["title"]) if sub == "" else str(_config[sub + "_title"])
 	_message.visible = confirming
 	_scroll.visible = sub != ""
-	_notice.visible = sub == "controls"
-	var texts: Array = [_config["yes_text"], _config["no_text"]] if confirming else [_config["resume_text"], _config["restart_text"], _config["settings_text"], _config["controls_text"]]
+	_notice.visible = sub == "controls" or sub == "quit"
+	var texts: Array = [_config["yes_text"], _config["no_text"]] if confirming else [_config["resume_text"], _config["restart_text"], _config["settings_text"], _config["controls_text"], _config["quit_text"]]
 	for i in _buttons.size():
 		_buttons[i].visible = sub == "" and i < texts.size()
 		if i < texts.size():
@@ -168,6 +170,8 @@ func refresh() -> void:
 		_refresh_settings()
 	elif sub == "controls":
 		_refresh_controls()
+	elif sub == "quit":
+		_refresh_quit()
 
 
 ## A press of choice `index` (the mouse): the focus moves there, then it is pressed.
@@ -240,6 +244,13 @@ func _act(action: String) -> void:
 			elif action == "pick" and _controls.activate() == "back":
 				_menu.leave_sub()
 				chosen.emit("back")
+		"quit":
+			if action == "up" or action == "down":
+				_quit.move(-1 if action == "up" else 1)
+			elif action == "pick":
+				var result: String = _quit.activate()
+				if result != "asked" and result != "":
+					chosen.emit(result)  # "main_menu" or "desktop": the map does it
 		_:
 			if action == "up" or action == "down":
 				_menu.move(-1 if action == "up" else 1)
@@ -275,7 +286,12 @@ func _build_sub(sub: String) -> void:
 	_built = sub
 	_settings = null
 	_controls = null
-	if sub == "settings":
+	_quit = null
+	if sub == "quit":
+		_quit = QuitMenu.new()
+		for i in _quit.rows.size():
+			_row_nodes.append(_build_quit_row(i))
+	elif sub == "settings":
 		_settings = SettingsMenu.new()
 		for i in _settings.rows.size():
 			_row_nodes.append(_build_settings_row(i))
@@ -373,6 +389,28 @@ func _build_controls_row(index: int) -> Dictionary:
 	return entry
 
 
+func _build_quit_row(index: int) -> Dictionary:
+	var panel := _row_panel(index)
+	var text := _row_label(String(_quit.rows[index]["label"]), 0.0, HORIZONTAL_ALIGNMENT_CENTER)
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_child(text)
+	panel.gui_input.connect(_on_quit_row_input.bind(index))
+	return {"panel": panel, "text": text}
+
+
+func _refresh_quit() -> void:
+	for i in _row_nodes.size():
+		_style_row(_row_nodes[i]["panel"], i == _quit.focus)
+	_notice.text = _quit.notice()
+
+
+func _on_quit_row_input(event: InputEvent, index: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and _quit != null:
+		_quit.focus_on(index)
+		_act("pick")
+		refresh()
+
+
 func _refresh_settings() -> void:
 	for i in _row_nodes.size():
 		var entry: Dictionary = _row_nodes[i]
@@ -451,6 +489,10 @@ func settings_logic():
 
 func controls_logic():
 	return _controls
+
+
+func quit_logic():
+	return _quit
 
 
 func sub_row_count() -> int:

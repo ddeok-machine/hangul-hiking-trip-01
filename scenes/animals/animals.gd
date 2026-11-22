@@ -1917,6 +1917,10 @@ func _on_pause_chosen(result: String) -> void:
 		get_tree().paused = false
 	if result == "restart":
 		_restart()
+	elif result == "main_menu":
+		GameState.exit_to_main_menu()
+	elif result == "desktop":
+		GameState.quit_to_desktop()
 
 
 ## Restart scene: the hearts, DDEOK and backpack go back to what the scene began with, and

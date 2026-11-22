@@ -1,0 +1,9 @@
+{
+  "_note": "The placeholder main menu (scenes/main_menu). Start goes to start_scene; the pause menu's Exit to Main Menu goes to main_menu_scene.",
+  "title": "한글 등산 · Hangul Hiking Trip",
+  "subtitle": "Hallasan",
+  "start_label": "Start",
+  "quit_label": "Quit to Desktop",
+  "start_scene": "res://scenes/foraging/foraging.tscn",
+  "main_menu_scene": "res://scenes/main_menu/main_menu.tscn"
+}
