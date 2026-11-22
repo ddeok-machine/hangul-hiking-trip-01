@@ -194,7 +194,10 @@ func damage_units(traveler: String, units: int, injury: String = "") -> bool:
 		return all_downed()  # nothing more to take; the end was announced once
 	heart_units[traveler] = max(0, int(heart_units[traveler]) - units)
 	hearts_changed.emit(traveler, heart_units[traveler])
+	if units > 0:
+		Vibration.rumble(0.6, 250, Vibration.device_for(traveler))  # a hit
 	if heart_units[traveler] == 0:
+		Vibration.rumble(1.0, 600, Vibration.device_for(traveler))  # going downed
 		traveler_downed.emit(traveler, injury)
 		if all_downed():
 			travelers_died.emit(traveler, partner_of(traveler), injury)
@@ -218,6 +221,7 @@ func revive(traveler: String, units: int) -> bool:
 	heart_units[traveler] = clampi(units, 1, max_units())
 	hearts_changed.emit(traveler, heart_units[traveler])
 	traveler_revived.emit(traveler, heart_units[traveler])
+	Vibration.rumble(0.5, 350, Vibration.device_for(traveler))  # a revive completing
 	return true
 
 

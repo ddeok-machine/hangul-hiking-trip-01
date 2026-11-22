@@ -1,0 +1,27 @@
+{
+  "_note": "On-screen controller prompts (scripts/input_prompts.gd). 'buttons' is keyed by Godot's JoyButton number (A=0 Cross, B=1 Circle, X=2 Square, Y=3 Triangle, BACK=4 Share/Create, START=6 Options, LEFT_SHOULDER=9 L1, RIGHT_SHOULDER=10 R1, DPAD_UP..RIGHT=11..14, TOUCHPAD=20). 'glyph' is what is shown when the Korean font (art/fonts/NotoSansKR) has every character of it, else 'fallback' (the glyph U+2715 is not in that font, so Cross falls back to the multiplication sign). 'axes' is keyed by JoyAxis number. 'key_names' renames keys whose Godot name is long. 'stick_threshold' is how far a stick must be pushed to count as a press or to switch the prompts to the controller.",
+  "buttons": {
+    "0": {"glyph": "✕", "fallback": "×"},
+    "1": {"glyph": "○", "fallback": "O"},
+    "2": {"glyph": "□", "fallback": "[]"},
+    "3": {"glyph": "△", "fallback": "/\\"},
+    "4": {"glyph": "Create", "fallback": "Create"},
+    "6": {"glyph": "Options", "fallback": "Options"},
+    "9": {"glyph": "L1", "fallback": "L1"},
+    "10": {"glyph": "R1", "fallback": "R1"},
+    "11": {"glyph": "D-pad", "fallback": "D-pad"},
+    "12": {"glyph": "D-pad", "fallback": "D-pad"},
+    "13": {"glyph": "D-pad", "fallback": "D-pad"},
+    "14": {"glyph": "D-pad", "fallback": "D-pad"},
+    "20": {"glyph": "Touchpad", "fallback": "Touchpad"}
+  },
+  "axes": {
+    "0": "Left stick",
+    "1": "Left stick",
+    "2": "Right stick",
+    "3": "Right stick"
+  },
+  "key_names": {"Escape": "Esc", "Period": ".", "Slash": "/"},
+  "stick_threshold": 0.5,
+  "stick_release": 0.3
+}

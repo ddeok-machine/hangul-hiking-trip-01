@@ -9,7 +9,8 @@ const START := "start"
 
 var show_s := 4.0
 var fade_s := 0.5
-## Prompt id -> {"text", "delay_s"?}.
+## Prompt id -> {"text", "delay_s"?}. A text may hold {action} tokens (`{p1_pick}`), which show the
+## key or button of the device used last (InputPrompts.fill).
 var prompts: Dictionary = {}
 ## The prompt on screen ("" if none) and how long it has been there.
 var current := ""
@@ -61,7 +62,7 @@ func _promote() -> void:
 
 
 func text() -> String:
-	return String(prompts[current]["text"]) if current != "" else ""
+	return InputPrompts.fill(String(prompts[current]["text"])) if current != "" else ""
 
 
 ## 1 for show_s seconds, then fading to 0 over fade_s.

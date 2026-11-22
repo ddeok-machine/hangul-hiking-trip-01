@@ -2,6 +2,8 @@ extends CanvasLayer
 ## Draws a Guide's current prompt in a small panel at the top centre: one line of English,
 ## faded as the Guide says. Hidden while there is no prompt.
 
+const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
+
 var panel: PanelContainer
 var label: Label
 var _guide
@@ -24,6 +26,7 @@ func setup(guide, config: Dictionary) -> void:
 	panel.add_theme_stylebox_override("panel", back)
 	label = Label.new()
 	label.name = "Text"
+	label.add_theme_font_override("font", FONT)  # draws the controller glyphs as well
 	label.add_theme_font_size_override("font_size", int(config["font_size"]))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(label)

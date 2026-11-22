@@ -135,7 +135,7 @@ var note_spot_source := ""   # how the latest landing spot was found ("random", 
 ## second of the stuck countdown (_tick_stuck), until the scene is restarted:
 ## picks, walks, hover names and opening the spelling view are ignored.
 var restarting := false
-## The pause menu (Esc): its rules and its HUD. While it is open the tree is paused
+## The pause menu (the `pause` action: Esc, Options): its rules and its HUD. While it is open the tree is paused
 ## and `picks_allowed()` is false, but `restarting` is not set (that would block
 ## Resume). `music_silenced` is true while it holds the countdown music still.
 var pause_menu
@@ -420,17 +420,17 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	step(Input.get_vector("p1_left", "p1_right", "p1_up", "p1_down"), delta)
+	step(InputPrompts.walk_vector(1), delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		# Only reached when the spelling view did not take this Esc (it closes itself and handles it).
+	if event.is_action_pressed("pause"):
+		# Only reached when no view took this Esc (the spelling view and the others close on it themselves).
 		open_pause_menu()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		click(event.position)
-	elif event.is_action_pressed("p1_pick"):  # no echo: holding Space picks once
+	elif event.is_action_pressed("p1_pick") or event.is_action_pressed("p2_pick"):  # no echo: holding the key picks once
 		pick_nearest()
 		get_viewport().set_input_as_handled()
 
@@ -954,6 +954,7 @@ func _play_tsss() -> void:
 		_steam_stream = SteamSound.make()
 	var player_node := AudioStreamPlayer.new()
 	player_node.stream = _steam_stream
+	player_node.bus = Settings.BUS_SFX
 	player_node.finished.connect(player_node.queue_free)
 	add_child(player_node)
 	player_node.play()
@@ -1623,7 +1624,7 @@ func _update_downed_clock() -> void:
 			_stop_music_unless_counting()
 
 
-## Esc with the spelling view closed: opens the pause menu and pauses the map, the
+## The `pause` action (Esc, Options) with the spelling view closed: opens the pause menu and pauses the map, the
 ## countdown and the music. False (and nothing happens) while the view is open, the
 ## scene is restarting (the last second, the kill, the death beat), a traveler is
 ## dead or the menu is open already.

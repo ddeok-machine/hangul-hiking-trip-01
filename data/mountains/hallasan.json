@@ -82,7 +82,7 @@
       "message_font_size": 20, "message_color": [0.55, 0.9, 0.6], "message_wasted_color": [0.95, 0.65, 0.45], "message_seconds": 4.0,
       "messages": {"drank": "{who} drank {item}: +{healed}", "partial": "{who} drank {item}: +{healed} ({wasted} wasted)", "wasted": "{who} drank {item}: wasted (already full)",
         "heart": "heart", "hearts": "hearts", "half_glyph": "½"}},
-    "pause_menu": {"panel_size": [460, 330], "button_size": [280, 58], "button_gap": 16, "dim_alpha": 0.4, "title": "일시정지 · Paused", "resume_text": "Resume", "restart_text": "Restart scene", "confirm_text": "Restart? Progress in this scene is lost.", "yes_text": "Yes", "no_text": "No", "panel_color": [0.1, 0.11, 0.13], "button_color": [0.22, 0.24, 0.28], "outline_color": [0.95, 0.85, 0.4], "text_color": [0.95, 0.95, 0.95]},
+    "pause_menu": {"_note_c2": "C2: the menu has Resume, Restart scene, Settings and Controls. sub_panel_size is the panel of the Settings and Controls screens (rows from data/series/controls_rows.json), sub_scroll_height the height of their row list, row_font_size / row_height their rows, slider_width a volume slider.", "sub_panel_size": [760, 560], "sub_scroll_height": 360, "row_font_size": 20, "row_height": 40, "slider_width": 220, "settings_text": "Settings", "controls_text": "Controls", "settings_title": "설정 · Settings", "controls_title": "조작 · Controls", "panel_size": [460, 330], "button_size": [280, 48], "button_gap": 12, "dim_alpha": 0.4, "title": "일시정지 · Paused", "resume_text": "Resume", "restart_text": "Restart scene", "confirm_text": "Restart? Progress in this scene is lost.", "yes_text": "Yes", "no_text": "No", "panel_color": [0.1, 0.11, 0.13], "button_color": [0.22, 0.24, 0.28], "outline_color": [0.95, 0.85, 0.4], "text_color": [0.95, 0.95, 0.95]},
     "start": {"nestor": [6.0, 1.5], "fernanda": [4.0, -1.5]},
     "terrain": {
       "_note": "Ground height in metres as a function of x: [x, height] points joined by a smooth monotone curve, flat beyond the first and last point. The ground is flat across z. Max slope must stay under 30 degrees.",
@@ -532,9 +532,9 @@
       "show_s": 4.0, "fade_s": 0.5, "font_size": 26, "top_px": 64,
       "prompts": {
         "start": {"delay_s": 2.0, "text": "Watch an animal to find out what it wants."},
-        "grab": {"text": "Grab letters from animals: Space or click."},
-        "spell": {"text": "Press E to spell."},
-        "give": {"text": "Press E to give it."}
+        "grab": {"text": "Grab letters from animals: {p1_pick} or click."},
+        "spell": {"text": "Press {spell_open} to spell."},
+        "give": {"text": "Press {spell_open} to give it."}
       }
     },
     "heal_pickups": {
@@ -572,7 +572,7 @@
       "times": {"common": 1, "endangered": 2, "extinct": 2},
       "walk_mult": 1.8,
       "arrive_m": 1.6,
-      "fx": {"thunk_text": "thunk", "thanks_text": "thank you!", "space_text": "Space", "stare_text": "...", "fall_s": 0.5, "spit_s": 0.4, "bow_s": 1.0, "wrap_s": 1.6, "skewer_color": [0.2, 0.2, 0.24], "antler_color": [0.85, 0.8, 0.7], "mound_color": [0.36, 0.22, 0.12], "mound_radius": 0.28, "wrap_color": [0.3, 0.55, 0.25], "pole_color": [0.35, 0.45, 0.35], "tool_color": [0.75, 0.6, 0.35], "antler_height_m": 0.35},
+      "fx": {"thunk_text": "thunk", "thanks_text": "thank you!", "space_text": "{p1_pick}", "stare_text": "...", "fall_s": 0.5, "spit_s": 0.4, "bow_s": 1.0, "wrap_s": 1.6, "skewer_color": [0.2, 0.2, 0.24], "antler_color": [0.85, 0.8, 0.7], "mound_color": [0.36, 0.22, 0.12], "mound_radius": 0.28, "wrap_color": [0.3, 0.55, 0.25], "pole_color": [0.35, 0.45, 0.35], "tool_color": [0.75, 0.6, 0.35], "antler_height_m": 0.35},
       "kinds": {
         "goraeni": {"arrive_m": 2.2, "act_s": 1.6, "steps": [
           {"at": 0.4, "fx": "spit", "to": "nestor"},

@@ -3,7 +3,7 @@ extends CanvasLayer
 ## map: the exit note's own flight (Ending's flutter and ExitNote's paper, with float_s as the
 ## flight time) from off the right edge of the view; when it has landed it is swapped for a paper
 ## panel in the middle of the screen showing the Korean only, styled by the letter's format.
-## Space, Enter, Esc, E or a left click closes it for good (`closed` is emitted); a close during
+## Space, Enter, Esc, E (or Cross, Circle, Triangle) or a left click closes it for good (`closed` is emitted); a close during
 ## the flight skips the rest. The layer runs in always mode, since the scene is paused while it is
 ## open, and the dim behind the paper takes the mouse.
 ##
@@ -14,7 +14,8 @@ const ExitNote := preload("res://scenes/foraging/exit_note.gd")
 const HintLetters := preload("res://scenes/animals/hint_letters.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
-const CLOSE_KEYS: Array[Key] = [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE, KEY_E]
+## The actions that close it (Space, Enter, Esc, E, and Cross, Circle, Triangle on a gamepad).
+const CLOSE_ACTIONS: Array[String] = ["p1_pick", "p2_pick", "ui_accept", "ui_cancel", "spell_open"]
 
 ## Emitted when the letter has been closed.
 signal closed
@@ -129,13 +130,13 @@ func close() -> bool:
 	return true
 
 
-## Space, Enter, Esc, E and a left click close it; every other key is left alone.
+## Space, Enter, Esc, E, Cross, Circle, Triangle and a left click close it; every other key is left alone.
 func _input(event: InputEvent) -> void:
 	if not _open:
 		return
 	var closing := false
-	if event is InputEventKey and event.pressed and not event.echo:
-		closing = CLOSE_KEYS.has(event.keycode)
+	if (event is InputEventKey or event is InputEventJoypadButton) and event.is_pressed() and not event.is_echo():
+		closing = CLOSE_ACTIONS.any(func(action): return event.is_action_pressed(action))
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		closing = true
 	if closing:

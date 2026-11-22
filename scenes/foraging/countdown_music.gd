@@ -35,6 +35,7 @@ func start() -> void:
 		stream = StuckMusic.make(config)
 	player = AudioStreamPlayer.new()
 	player.stream = stream
+	player.bus = Settings.BUS_MUSIC
 	player.volume_db = -80.0
 	player.process_mode = Node.PROCESS_MODE_ALWAYS  # it plays under the spelling view
 	add_child(player)

@@ -116,10 +116,10 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		close_word_select()  # the mouse took over; the click itself goes on
 		return
-	if not event is InputEventKey or not event.pressed:
+	if not (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion) or not event.is_pressed():
 		return
 	var action := WordSelect.action_for(event)
-	if action == "" or (event.echo and action in ["confirm", "cancel", "open"]):
+	if action == "" or (event.is_echo() and action in ["confirm", "cancel", "open"]):
 		return
 	if word_action(action):
 		get_viewport().set_input_as_handled()

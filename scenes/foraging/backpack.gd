@@ -200,7 +200,7 @@ func sync(items: Array) -> void:
 static func action_for(event: InputEvent) -> String:
 	for player in [1, 2]:
 		for direction in ["left", "right", "up", "down"]:
-			if event.is_action_pressed("p%d_%s" % [player, direction], true):
+			if InputPrompts.pressed(event, "p%d_%s" % [player, direction], true):
 				return direction
 		if event.is_action_pressed("p%d_pick" % player):
 			return "place"

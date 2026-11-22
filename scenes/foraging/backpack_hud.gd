@@ -203,7 +203,7 @@ func refresh() -> void:
 ## so its own _unhandled_input is not reached: this is where the keys are read.
 ## One Esc does one thing: with the question up it cancels the question only.
 func _input(event: InputEvent) -> void:
-	if not event is InputEventKey or not event.pressed:
+	if not (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion) or not event.is_pressed():
 		return
 	if _backpack.is_open:
 		if _backpack.notebook_open:
@@ -214,9 +214,9 @@ func _input(event: InputEvent) -> void:
 			if _on_key_action(action):
 				get_viewport().set_input_as_handled()
 			return
-		if event.echo:
+		if event.is_echo():
 			return
-		if event.keycode == KEY_ESCAPE:
+		if event.is_action_pressed("ui_cancel"):
 			get_viewport().set_input_as_handled()
 			if _backpack.choosing:
 				_backpack.escape()
@@ -227,7 +227,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			close_requested.emit()
 		return
-	if event.echo:
+	if event.is_echo():
 		return
 	if is_backpack_key(event) and open_handler.is_valid() and open_handler.call():
 		get_viewport().set_input_as_handled()
@@ -249,12 +249,12 @@ func _book_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		if action == "up" or action == "down":
 			scroll_notebook(1 if action == "down" else -1)
-		elif (action == "left" or action == "right") and not event.echo:
+		elif (action == "left" or action == "right") and not event.is_echo():
 			flip_notebook(1 if action == "right" else -1)
 		return
-	if event.echo:
+	if event.is_echo():
 		return
-	if event.keycode == KEY_ESCAPE:
+	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		_escape_book()
 	elif notebook_action(event) != "":

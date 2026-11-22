@@ -10,7 +10,7 @@ extends RefCounted
 ##   get_tool(uid) -> Dictionary    {} if there is none
 ##   equip(uid) -> bool             uid 0 = Hands; false for a uid that is not held (or broken)
 ##   equipped() -> Dictionary       the equipped instance, {} for Hands
-##   cycle() -> int                 Hands -> each held tool in order -> Hands ...; returns the new uid
+##   cycle(direction := 1) -> int   Hands -> each held tool in order -> Hands ...; returns the new uid
 ##   spend(uid, n) -> Dictionary    {"left", "broke", "id"}; at 0 the tool is removed
 ##   snapshot() / restore(snap)     what GameState keeps for a scene restart and the next scene
 ##   signal changed                 after every change
@@ -88,15 +88,16 @@ func equip(uid: int) -> bool:
 	return true
 
 
-## The next stop of Hands, tool 1, tool 2, ... (a tool with no uses left is skipped). With no
-## tool held it stays on Hands. Returns the uid now equipped (0 = Hands).
-func cycle() -> int:
+## The next stop of Hands, tool 1, tool 2, ... (a tool with no uses left is skipped); a
+## `direction` of -1 goes the other way round. With no tool held it stays on Hands. Returns
+## the uid now equipped (0 = Hands).
+func cycle(direction := 1) -> int:
 	var stops: Array[int] = [0]
 	for entry in _tools:
 		if int(entry["uses"]) > 0:
 			stops.append(int(entry["uid"]))
 	var at := stops.find(_equipped_uid)
-	var next: int = stops[(at + 1) % stops.size()] if at >= 0 else 0
+	var next: int = stops[posmod(at + direction, stops.size())] if at >= 0 else 0
 	equip(next)
 	return next
 

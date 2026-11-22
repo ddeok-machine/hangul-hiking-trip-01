@@ -94,7 +94,7 @@ func cancel() -> String:
 ## held; the others do not.
 static func action_for(event: InputEvent) -> String:
 	for direction in ["up", "down", "left", "right"]:
-		if event.is_action_pressed("select_" + direction, true):
+		if InputPrompts.pressed(event, "select_" + direction, true):
 			return direction
 	if event.is_action_pressed("select_confirm"):
 		return "confirm"

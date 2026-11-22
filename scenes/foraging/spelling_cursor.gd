@@ -28,7 +28,7 @@ func set_active_player(player: int) -> void:
 ## player's key for it, else "". Held movement keys repeat; place does not.
 func action_for(event: InputEvent) -> String:
 	for direction in ["left", "right", "up", "down"]:
-		if event.is_action_pressed("p%d_%s" % [active_player, direction], true):
+		if InputPrompts.pressed(event, "p%d_%s" % [active_player, direction], true):
 			return direction
 	if event.is_action_pressed("p%d_pick" % active_player):
 		return "place"
@@ -39,7 +39,7 @@ func action_for(event: InputEvent) -> String:
 static func is_player_key(event: InputEvent) -> bool:
 	for player in [1, 2]:
 		for name in ["left", "right", "up", "down", "pick"]:
-			if event.is_action_pressed("p%d_%s" % [player, name], true):
+			if InputPrompts.pressed(event, "p%d_%s" % [player, name], true):
 				return true
 	return false
 

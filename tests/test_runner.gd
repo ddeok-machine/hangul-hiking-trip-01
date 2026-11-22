@@ -176,11 +176,18 @@ const EXPECTED_SECTIONS: Array[String] = [
 	"test_gifts9f_data",
 	"test_gifts9f_logic",
 	"test_gifts9f_scene",
+	"test_gamepad_bindings",
+	"test_gamepad_prompts",
+	"test_gamepad_scenes",
+	"test_settings_c2",
+	"test_remap_c2",
+	"test_pause_screens_c2",
 ]
 
 ## The run fails if fewer checks than this ran. After adding tests, raise it to
 ## the printed total minus a small margin (currently 6).
-const MIN_CHECKS := 4689
+const RUN_PATH := "user://test_run_settings.cfg"
+const MIN_CHECKS := 5089
 
 
 func check(condition: bool, label: String) -> void:
@@ -199,6 +206,14 @@ func _ready() -> void:
 	# The sections written before random decoys and chaos piles (Prompt 7d) expect the
 	# decoys at the fixed positions of the data and no piles; they run in the legacy
 	# layout. The 7d sections switch it off and build maps with pinned seeds.
+	# The run never touches the real settings file, a window or a controller: its own settings
+	# file (deleted at the end), a window function and a rumble that do nothing.
+	Settings.path = RUN_PATH
+	Settings.window_fn = func(_full: bool) -> void: pass
+	Vibration.rumble_fn = func(_d: int, _w: float, _s: float, _t: float) -> void: pass
+	if FileAccess.file_exists(RUN_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(RUN_PATH))
+	Settings.load_settings()
 	Foraging.legacy_layout = true
 	AnimalsScript.tools_enabled = false  # the animal sections before Prompt 9c expect no tools in the scene; the 9c section turns them on
 	AnimalsScript.hints_enabled = false  # nor a hint letter pausing a long run; the 9c-iii section turns them on
@@ -415,6 +430,17 @@ func _ready() -> void:
 	test_gifts9f_data()
 	test_gifts9f_logic()
 	await test_gifts9f_scene()
+	print("== Gamepad: bindings, prompts, both scenes (Prompt C1) ==")
+	test_gamepad_bindings()
+	test_gamepad_prompts()
+	await test_gamepad_scenes()
+	print("== Settings, vibration, remapping, the pause menu's new screens (Prompt C2) ==")
+	test_settings_c2()
+	test_remap_c2()
+	await test_pause_screens_c2()
+	Settings.path = Settings.DEFAULT_PATH  # the run's own settings file goes now
+	if FileAccess.file_exists(RUN_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(RUN_PATH))
 	for section in EXPECTED_SECTIONS:
 		if not finished.has(section):
 			check(false, "section did not run to its end: " + section)
@@ -2164,7 +2190,7 @@ func _key_event(keycode: Key, pressed := true, echo := false) -> InputEventKey:
 
 
 func _bound_keys(action: String) -> Array:
-	return InputMap.action_get_events(action).map(func(e): return [e.physical_keycode, e.location])
+	return InputMap.action_get_events(action).filter(func(e): return e is InputEventKey).map(func(e): return [e.physical_keycode, e.location])
 
 
 func test_reach_data() -> void:
@@ -4984,12 +5010,15 @@ func test_pause_menu_logic() -> void:
 	menu.move(1)
 	check(menu.focus == 1, "down moves to Restart scene")
 	menu.move(1)
+	menu.move(1)
+	check(menu.focus == PauseMenuScript.CONTROLS, "down goes on to Settings and Controls")
+	menu.move(1)
 	check(menu.focus == 0, "down from the last wraps to the first")
 	menu.move(-1)
-	check(menu.focus == 1, "up from the first wraps to the last")
+	check(menu.focus == PauseMenuScript.CONTROLS, "up from the first wraps to the last")
 	menu.move(-1)
 	menu.move(-1)
-	check(menu.focus == 1, "two ups wrap and come back")
+	check(menu.focus == 1, "two ups from the last come back to Restart scene")
 	menu.focus_on(0)
 	menu.focus_on(7)
 	menu.focus_on(-1)
@@ -5201,7 +5230,7 @@ func test_pause_menu_input() -> void:
 	_tap(viewport, KEY_W)
 	check(menu.focus == 0, "P1: W moves it back")
 	_tap(viewport, KEY_W)
-	check(menu.focus == 1, "P1: W from the first wraps to the last")
+	check(menu.focus == 3, "P1: W from the first wraps to the last (Controls)")
 	_tap(viewport, KEY_S)
 	check(menu.focus == 0, "P1: S from the last wraps to the first")
 	# Player 2: Up/Down move, Enter and KP Enter press.
@@ -5209,7 +5238,7 @@ func test_pause_menu_input() -> void:
 	check(menu.focus == 1, "P2: Down moves the highlight")
 	_tap(viewport, KEY_UP)
 	_tap(viewport, KEY_UP)
-	check(menu.focus == 1, "P2: Up twice wraps")
+	check(menu.focus == 3, "P2: Up twice wraps")
 	_tap(viewport, KEY_DOWN)
 	check(menu.focus == 0, "P2: Down wraps")
 	_tap(viewport, KEY_SPACE)
@@ -12483,7 +12512,7 @@ func test_animals9biii_logic() -> void:
 	# The guide: data, timing, once, queue.
 	var gcfg: Dictionary = cfg["guide"]
 	check(is_equal_approx(float(gcfg["show_s"]), 4.0) and is_equal_approx(float(gcfg["prompts"]["start"]["delay_s"]), 2.0), "the guide data: 4 s shown, the start prompt after 2 s")
-	check(gcfg["prompts"]["start"]["text"] == "Watch an animal to find out what it wants." and gcfg["prompts"]["grab"]["text"] == "Grab letters from animals: Space or click." and gcfg["prompts"]["spell"]["text"] == "Press E to spell." and gcfg["prompts"]["give"]["text"] == "Press E to give it.", "the four prompt texts are as briefed")
+	check(gcfg["prompts"]["start"]["text"] == "Watch an animal to find out what it wants." and gcfg["prompts"]["grab"]["text"] == "Grab letters from animals: {p1_pick} or click." and gcfg["prompts"]["spell"]["text"] == "Press {spell_open} to spell." and gcfg["prompts"]["give"]["text"] == "Press {spell_open} to give it.", "the four prompt texts are as briefed (the data holds the keys as {action} tokens)")
 	var seen := {}
 	var guide = GuideScript.new(gcfg, seen)
 	guide.update(1.9)
@@ -14179,7 +14208,7 @@ func test_hint9ciii_scene() -> void:
 	GameState.new_hike()
 	map = await _animals_map(82)
 	_hint_quiet_guide()
-	var close_inputs := {"Space": _key_event(KEY_SPACE), "Enter": _key_event(KEY_ENTER), "KP Enter": _key_event(KEY_KP_ENTER), "Esc": _key_event(KEY_ESCAPE), "E": _key_event(KEY_E), "click": _click_event(Vector2(300.0, 300.0))}
+	var close_inputs := {"Space": _key_event(KEY_SPACE), "Enter": _key_event(KEY_ENTER), "KP Enter": _key_event(KEY_KP_ENTER), "Esc": _key_event(KEY_ESCAPE), "E": _key_event(KEY_E), "click": _click_event(Vector2(300.0, 300.0)), "Cross": _pad_button(JOY_BUTTON_A), "Circle": _pad_button(JOY_BUTTON_B), "Triangle": _pad_button(JOY_BUTTON_Y)}
 	for label in close_inputs:
 		map.hint_hud.close()
 		check(map.open_hint("나무") and map.hint_hud.is_open() and get_tree().paused, "(setup) %s: a letter is open" % label)
@@ -14192,7 +14221,9 @@ func test_hint9ciii_scene() -> void:
 	viewport.push_input(_key_event(KEY_A))
 	viewport.push_input(_key_event(KEY_SPACE, true, true))
 	viewport.push_input(_key_event(KEY_SPACE, false))
-	check(map.hint_hud.is_open(), "a right click, another key, a key repeat and a key release do not close it")
+	viewport.push_input(_pad_button(JOY_BUTTON_X))
+	viewport.push_input(_pad_button(JOY_BUTTON_A, false))
+	check(map.hint_hud.is_open(), "a right click, another key, a key repeat, a key release, Square and a released Cross do not close it")
 	map.hint_hud.close()
 	map.free()
 	get_tree().paused = false
@@ -16504,3 +16535,851 @@ func _count_all_items() -> int:
 	for entry in GameState.inventory.items():
 		n += int(entry["count"])
 	return n + GameState.tools.tools().size()
+
+
+# ---- Gamepad input (Prompt C1) ----
+# Nothing here needs a connected controller: the events are built by hand.
+
+func _pad_button(index: int, pressed := true, device := 0) -> InputEventJoypadButton:
+	var event := InputEventJoypadButton.new()
+	event.button_index = index
+	event.pressed = pressed
+	event.device = device
+	return event
+
+
+func _pad_axis(axis: int, value: float, device := 0) -> InputEventJoypadMotion:
+	var event := InputEventJoypadMotion.new()
+	event.axis = axis
+	event.axis_value = value
+	event.device = device
+	return event
+
+
+func _tap_pad(viewport: Viewport, index: int, device := 0) -> void:
+	for pressed in [true, false]:
+		viewport.push_input(_pad_button(index, pressed, device))
+
+
+func _has_pad_button(action: String, index: int, device: int) -> bool:
+	for event in InputMap.action_get_events(action):
+		if event is InputEventJoypadButton and event.button_index == index and event.device == device:
+			return true
+	return false
+
+
+func _has_pad_axis(action: String, axis: int, direction: float, device: int) -> bool:
+	for event in InputMap.action_get_events(action):
+		if event is InputEventJoypadMotion and event.axis == axis and signf(event.axis_value) == direction and event.device == device:
+			return true
+	return false
+
+
+func _has_key(action: String, keycode: Key) -> bool:
+	return _bound_keys(action).any(func(k): return k[0] == keycode)
+
+
+func _menu_open(map: Node3D) -> bool:
+	return map.pause_menu.is_open
+
+
+## Every .gd under `dir` (res://), recursively.
+func _gd_files(dir: String) -> Array[String]:
+	var found: Array[String] = []
+	for file in DirAccess.get_files_at(dir):
+		if file.ends_with(".gd"):
+			found.append(dir.path_join(file))
+	for sub in DirAccess.get_directories_at(dir):
+		found.append_array(_gd_files(dir.path_join(sub)))
+	return found
+
+
+func test_gamepad_bindings() -> void:
+	var gameplay: Array[String] = ["p1_left", "p1_right", "p1_up", "p1_down", "p2_left", "p2_right", "p2_up", "p2_down",
+			"p1_pick", "p2_pick", "backpack_p1", "backpack_p2", "notebook_p1", "notebook_p2", "spell_open", "tool_next", "tool_prev",
+			"select_up", "select_down", "select_left", "select_right", "select_confirm", "select_cancel", "pause"]
+	for action in gameplay:
+		var keys := 0
+		var pads := 0
+		for event in InputMap.action_get_events(action):
+			if event is InputEventKey:
+				keys += 1
+			elif event is InputEventJoypadButton or event is InputEventJoypadMotion:
+				pads += 1
+		check(keys > 0, "%s has a keyboard event" % action)
+		check(pads > 0, "%s has a joypad event (no action is without one)" % action)
+	# Device 0 drives player 1, device 1 player 2, and no event serves both.
+	for player in [1, 2]:
+		var dev: int = player - 1
+		var p := "p%d_" % player
+		check(_has_pad_axis(p + "left", JOY_AXIS_LEFT_X, -1.0, dev) and _has_pad_button(p + "left", JOY_BUTTON_DPAD_LEFT, dev), "%sleft: left stick and D-pad left, device %d" % [p, dev])
+		check(_has_pad_axis(p + "right", JOY_AXIS_LEFT_X, 1.0, dev) and _has_pad_button(p + "right", JOY_BUTTON_DPAD_RIGHT, dev), "%sright: left stick and D-pad right, device %d" % [p, dev])
+		check(_has_pad_axis(p + "up", JOY_AXIS_LEFT_Y, -1.0, dev) and _has_pad_button(p + "up", JOY_BUTTON_DPAD_UP, dev), "%sup: left stick and D-pad up, device %d" % [p, dev])
+		check(_has_pad_axis(p + "down", JOY_AXIS_LEFT_Y, 1.0, dev) and _has_pad_button(p + "down", JOY_BUTTON_DPAD_DOWN, dev), "%sdown: left stick and D-pad down, device %d" % [p, dev])
+		for direction in ["left", "right", "up", "down"]:
+			check(is_equal_approx(InputMap.action_get_deadzone(p + direction), 0.5), "%s%s has a dead zone of 0.5" % [p, direction])
+		check(_has_pad_button(p + "pick", JOY_BUTTON_A, dev), "%spick: Cross on device %d" % [p, dev])
+		check(_has_pad_button("backpack_p%d" % player, JOY_BUTTON_X, dev), "backpack_p%d: Square on device %d" % [player, dev])
+		check(_has_pad_button("notebook_p%d" % player, JOY_BUTTON_TOUCHPAD, dev) and _has_pad_button("notebook_p%d" % player, JOY_BUTTON_BACK, dev), "notebook_p%d: the touchpad and Share/Create on device %d" % [player, dev])
+	var only_device_0 := true
+	for event in InputMap.action_get_events("p1_pick") + InputMap.action_get_events("p1_left"):
+		if (event is InputEventJoypadButton or event is InputEventJoypadMotion) and event.device != 0:
+			only_device_0 = false
+	check(only_device_0, "player 1's actions answer to device 0 only")
+	check(_has_pad_button("spell_open", JOY_BUTTON_Y, 0) and _has_key("spell_open", KEY_E), "spell_open: Triangle (device 0) and E")
+	check(_has_pad_button("tool_next", JOY_BUTTON_RIGHT_SHOULDER, 0) and _has_key("tool_next", KEY_R), "tool_next: R1 (device 0) and R")
+	check(_has_pad_button("tool_prev", JOY_BUTTON_LEFT_SHOULDER, 0) and _has_key("tool_prev", KEY_F), "tool_prev: L1 (device 0) and F")
+	check(_has_pad_button("pause", JOY_BUTTON_START, -1) and _has_key("pause", KEY_ESCAPE) and _bound_keys("pause").size() == 1, "pause: Options (any device) and Esc")
+	check(_has_pad_button("select_confirm", JOY_BUTTON_A, -1) and _has_pad_button("select_cancel", JOY_BUTTON_B, -1), "word select: Cross confirms and Circle cancels, on any device")
+	for direction in ["up", "down", "left", "right"]:
+		check(is_equal_approx(InputMap.action_get_deadzone("select_" + direction), 0.5), "select_%s has a dead zone of 0.5" % direction)
+	check(_has_pad_button("select_up", JOY_BUTTON_DPAD_UP, -1) and _has_pad_button("select_down", JOY_BUTTON_DPAD_DOWN, -1) and _has_pad_button("select_left", JOY_BUTTON_DPAD_LEFT, -1) and _has_pad_button("select_right", JOY_BUTTON_DPAD_RIGHT, -1), "word select: the D-pad")
+	# The built-in ui_* actions: D-pad, Cross to accept, Circle to cancel.
+	for case in [["ui_up", JOY_BUTTON_DPAD_UP], ["ui_down", JOY_BUTTON_DPAD_DOWN], ["ui_left", JOY_BUTTON_DPAD_LEFT], ["ui_right", JOY_BUTTON_DPAD_RIGHT], ["ui_accept", JOY_BUTTON_A], ["ui_cancel", JOY_BUTTON_B]]:
+		check(_has_pad_button(case[0], case[1], -1), "%s answers to joypad button %d" % [case[0], case[1]])
+	# Which event answers which action (the device filter).
+	check(InputMap.event_is_action(_pad_button(JOY_BUTTON_A, true, 0), "p1_pick") and not InputMap.event_is_action(_pad_button(JOY_BUTTON_A, true, 0), "p2_pick"), "Cross on device 0 is p1_pick, not p2_pick")
+	check(InputMap.event_is_action(_pad_button(JOY_BUTTON_A, true, 1), "p2_pick") and not InputMap.event_is_action(_pad_button(JOY_BUTTON_A, true, 1), "p1_pick"), "Cross on device 1 is p2_pick, not p1_pick")
+	check(_pad_axis(JOY_AXIS_LEFT_X, -0.9, 0).is_action_pressed("p1_left") and not _pad_axis(JOY_AXIS_LEFT_X, -0.9, 1).is_action_pressed("p1_left") and _pad_axis(JOY_AXIS_LEFT_X, -0.9, 1).is_action_pressed("p2_left"), "the left stick of device 0 walks player 1 and that of device 1 player 2")
+	check(not _pad_axis(JOY_AXIS_LEFT_X, -0.4, 0).is_action_pressed("p1_left") and _pad_axis(JOY_AXIS_LEFT_X, -0.6, 0).is_action_pressed("p1_left"), "a stick pushed 0.4 is inside the dead zone, 0.6 is out")
+	check(InputMap.event_is_action(_pad_button(JOY_BUTTON_START, true, 0), "pause") and InputMap.event_is_action(_pad_button(JOY_BUTTON_START, true, 1), "pause"), "Options pauses from either controller")
+	# Constant speed: a stick half-pushed walks as fast as one pushed to the end, and a diagonal is no faster.
+	Input.action_press("p1_right", 0.3)
+	check(InputPrompts.walk_vector(1).is_equal_approx(Vector2(1.0, 0.0)), "a light push walks at full speed")
+	Input.action_press("p1_down", 0.3)
+	var diagonal := InputPrompts.walk_vector(1)
+	check(is_equal_approx(diagonal.length(), 1.0) and is_equal_approx(diagonal.x, diagonal.y), "a diagonal is a unit vector too")
+	Input.action_release("p1_right")
+	Input.action_release("p1_down")
+	check(InputPrompts.walk_vector(1) == Vector2.ZERO and InputPrompts.walk_vector(2) == Vector2.ZERO, "no push: no walking")
+	Input.action_press("p2_left", 1.0)
+	check(InputPrompts.walk_vector(2).is_equal_approx(Vector2(-1.0, 0.0)) and InputPrompts.walk_vector(1) == Vector2.ZERO, "player 2's walking is read from player 2's actions")
+	Input.action_release("p2_left")
+	# A stick is one press per push, not one for each motion event.
+	InputPrompts.reset()
+	var counts: Array[bool] = []
+	for value in [0.4, 0.9, 0.95, 0.7, 0.0, 0.9, -0.9, -1.0]:
+		counts.append(InputPrompts.pressed(_pad_axis(JOY_AXIS_LEFT_X, value), "p1_right" if value > 0.0 else "p1_left", true))
+	check(counts == [false, true, false, false, false, true, true, false], "a held stick counts once; releasing and pushing again, or the other way, counts again (%s)" % str(counts))
+	var one_event := _pad_axis(JOY_AXIS_LEFT_Y, 1.0)
+	var first_ask := InputPrompts.pressed(one_event, "p1_down", true)
+	var second_ask := InputPrompts.pressed(one_event, "select_down", true)
+	var third_ask := InputPrompts.pressed(one_event, "p2_down", true)
+	check(first_ask and second_ask and not third_ask, "asked about three times, one event gives one answer (p2_down is another device's)")
+	InputPrompts.reset()
+	# No Esc key check is left in the scripts.
+	var offenders: Array[String] = []
+	var other_keys: Array[String] = []
+	var key_pattern := RegEx.create_from_string("KEY_[A-Z0-9_]+")
+	for dir in ["res://scenes", "res://scripts"]:
+		for file in _gd_files(dir):
+			var source := FileAccess.get_file_as_string(file)
+			if source.contains("KEY_ESCAPE"):
+				offenders.append(file)
+			for found in key_pattern.search_all(source):
+				if not found.get_string() in ["KEY_F9", "KEY_NONE"]:
+					other_keys.append(file + ": " + found.get_string())
+	check(offenders.is_empty(), "no scene or script checks KEY_ESCAPE (%s)" % str(offenders))
+	check(other_keys.is_empty(), "no other hardcoded key check is left but the debug kit's F9 (%s)" % str(other_keys))
+	_section_done("test_gamepad_bindings")
+
+
+func test_gamepad_prompts() -> void:
+	InputPrompts.reset()
+	var changes: Array[bool] = []
+	var on_change := func(gamepad: bool) -> void: changes.append(gamepad)
+	InputPrompts.device_changed.connect(on_change)
+	InputPrompts.note_event(_key_event(KEY_SPACE))
+	check(not InputPrompts.gamepad_active, "a key press: keyboard prompts")
+	var keyboard := {"p1_pick": "Space", "p2_pick": "Enter", "spell_open": "E", "backpack_p1": "Tab", "notebook_p1": "Q", "notebook_p2": "/", "tool_next": "R", "tool_prev": "F", "pause": "Esc", "p1_left": "A", "p1_up": "W", "select_cancel": "Esc"}
+	for action in keyboard:
+		check(InputPrompts.label_for(action) == keyboard[action], "keyboard: %s is %s (%s)" % [action, keyboard[action], InputPrompts.label_for(action)])
+	InputPrompts.note_event(_pad_button(JOY_BUTTON_A))
+	check(InputPrompts.gamepad_active, "a button press: gamepad prompts")
+	var cross := InputPrompts.button_label(JOY_BUTTON_A)
+	check(cross in ["✕", "×"] and InputPrompts.font_has(cross), "Cross is drawn as %s, which the Korean font has" % cross)
+	for button in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER, JOY_BUTTON_START, JOY_BUTTON_TOUCHPAD]:
+		check(InputPrompts.button_label(button) != "" and InputPrompts.font_has(InputPrompts.button_label(button)), "the Korean font draws the label of joypad button %d (%s)" % [button, InputPrompts.button_label(button)])
+	check(InputPrompts.button_label(JOY_BUTTON_B) == "○" and InputPrompts.button_label(JOY_BUTTON_X) == "□" and InputPrompts.button_label(JOY_BUTTON_Y) == "△", "Circle, Square and Triangle keep their glyphs")
+	var pad := {"p1_pick": cross, "p2_pick": cross, "select_cancel": "○", "backpack_p1": "□", "backpack_p2": "□", "spell_open": "△", "tool_next": "R1", "tool_prev": "L1", "pause": "Options", "notebook_p1": "Touchpad", "p1_left": "Left stick", "p2_down": "Left stick"}
+	for action in pad:
+		check(InputPrompts.label_for(action) == pad[action], "gamepad: %s is %s (%s)" % [action, pad[action], InputPrompts.label_for(action)])
+	check(InputPrompts.label_for("no_such_action") == "", "an unknown action has no label")
+	# Text from data: {action} tokens.
+	var grab := "Grab letters from animals: {p1_pick} or click."
+	check(InputPrompts.fill(grab) == "Grab letters from animals: %s or click." % cross, "fill() puts the button in a text")
+	InputPrompts.note_event(_key_event(KEY_E))
+	check(not InputPrompts.gamepad_active and InputPrompts.fill(grab) == "Grab letters from animals: Space or click." and InputPrompts.fill("Press {spell_open} to spell.") == "Press E to spell.", "a key press switches the prompts back to the keys")
+	check(InputPrompts.fill("{nothing} stays, {p1_pick") == "{nothing} stays, {p1_pick" and InputPrompts.fill("plain") == "plain", "a brace that names no action is left alone")
+	# What switches the device and what does not.
+	InputPrompts.note_event(_pad_axis(JOY_AXIS_LEFT_X, 0.3))
+	check(not InputPrompts.gamepad_active, "a stick drifting at 0.3 does not switch to the gamepad")
+	InputPrompts.note_event(_pad_axis(JOY_AXIS_LEFT_X, 0.9))
+	check(InputPrompts.gamepad_active, "a stick pushed to 0.9 does")
+	InputPrompts.note_event(_key_event(KEY_Q, false))
+	check(InputPrompts.gamepad_active, "a key release does not switch back")
+	InputPrompts.note_event(InputEventMouseMotion.new())
+	check(not InputPrompts.gamepad_active, "mouse movement is keyboard and mouse again")
+	InputPrompts.note_event(_pad_button(JOY_BUTTON_A, false))
+	check(not InputPrompts.gamepad_active, "a button release does not switch to the gamepad")
+	check(changes == [true, false, true, false], "device_changed fired once per switch (%s)" % str(changes))
+	# Events through the real input path reach it as well (the tests push them into the viewport).
+	get_viewport().push_input(_pad_button(JOY_BUTTON_Y))
+	check(InputPrompts.gamepad_active, "a button pushed into the viewport switches the prompts")
+	get_viewport().push_input(_key_event(KEY_W))
+	check(not InputPrompts.gamepad_active, "...and a key pushed into it switches them back")
+	# The prompt texts in the data hold tokens, never a key name.
+	var prompts: Dictionary = Content.mountain("hallasan")["animals"]["guide"]["prompts"]
+	for id in prompts:
+		var text := String(prompts[id]["text"])
+		check(not (text.contains("Space") or text.contains(" E ") or text.contains("Enter") or text.contains("Tab")), "guide prompt %s names no key (%s)" % [id, text])
+	check(String(Content.mountain("hallasan")["animals"]["gifts"]["fx"]["space_text"]) == "{p1_pick}", "the duck's prompt is a token")
+	var guide = GuideScript.new(Content.mountain("hallasan")["animals"]["guide"], {})
+	guide.trigger("grab")
+	check(guide.text() == "Grab letters from animals: Space or click.", "the guide shows the key while the keyboard is in use")
+	InputPrompts.note_event(_pad_button(JOY_BUTTON_B))
+	check(guide.text() == "Grab letters from animals: %s or click." % cross, "...and the button the moment a controller is (live, no restart)")
+	InputPrompts.device_changed.disconnect(on_change)
+	InputPrompts.reset()
+	_section_done("test_gamepad_prompts")
+
+
+func test_gamepad_scenes() -> void:
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	InputPrompts.reset()
+
+	# ---- Foraging: Options pauses, Circle backs out ----
+	var map: Node3D = await _stuck_map()
+	var viewport := map.get_viewport()
+	var hud = map.pause_hud
+	var menu = map.pause_menu
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(menu.is_open and hud.root_visible() and get_tree().paused, "foraging: Options opens the pause menu and pauses the tree")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not menu.is_open and not hud.root_visible() and not get_tree().paused, "foraging: Options closes it again, and the same press does not reopen it")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(menu.focus == 1, "foraging: the D-pad moves the focus")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(menu.is_open and menu.confirming, "foraging: Cross presses it: the question is up")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(menu.is_open and not menu.confirming, "foraging: Circle goes back from the question, the menu stays")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not menu.is_open and not get_tree().paused, "foraging: Circle closes the menu")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(not menu.is_open and not get_tree().paused, "foraging: Cross on Resume resumes")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN, 1)
+	_tap_pad(viewport, JOY_BUTTON_A, 1)
+	check(menu.confirming, "foraging: the second controller steers the shared menu too")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not menu.is_open and not get_tree().paused and menu.restart_requests == 0, "foraging: Options closes the whole menu even over the question")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	for value in [1.0, 0.9, 1.0]:
+		viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, value))
+	check(menu.focus == 1, "foraging: a stick held down moves the focus once, not once per motion event")
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, 0.0))
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, 1.0))
+	check(menu.focus == 2, "foraging: pushed again, it moves again")
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, 0.0))
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not menu.is_open and not get_tree().paused, "(setup) closed")
+	check(map.open_spelling("ma") and get_tree().paused, "(setup) the spelling view is open")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(map.spelling_hud.is_open() and not menu.is_open, "foraging: Options opens no menu over the spelling view")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not map.spelling_hud.is_open() and not menu.is_open and not get_tree().paused, "foraging: Circle closes the spelling view and opens no menu")
+	map.free()
+	get_tree().paused = false
+
+	# ---- Foraging: Cross picks, for either player ----
+	map = await _fresh_reach_map()
+	var target := _lone_plant(map, "target")
+	var decoy := _lone_plant(map, "decoy")
+	check(target != null and decoy != null, "(setup) an isolated target and decoy")
+	if target != null and decoy != null:
+		_stand_near(map, target)
+		var letter: String = target.letter
+		map._unhandled_input(_pad_button(JOY_BUTTON_A, true, 1))
+		check(map.picking.basket == [letter] and target.letter == "", "foraging: Cross on the second controller (p2_pick) picks the plant in reach")
+		_stand_near(map, decoy)
+		map._unhandled_input(_key_event(KEY_ENTER))
+		check(decoy.letter == "", "foraging: Enter (p2_pick) picks too")
+	map.free()
+
+	# ---- Foraging: backpack, notebook, word select, spelling ----
+	_add_test_notes()
+	map = await _stuck_map({}, true, true)
+	GameState.inventory.add("ssanghwatang")
+	GameState.inventory.add("test_note_a")
+	GameState.inventory.add("test_note_b")
+	viewport = map.get_viewport()
+	var pack = map.backpack
+	var bag = map.backpack_hud
+	_tap_pad(viewport, JOY_BUTTON_X)
+	check(pack.is_open and get_tree().paused, "foraging: Square opens the backpack")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(pack.selected != "", "foraging: the D-pad shows the cursor on a row")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(pack.notebook_open or pack.choosing, "foraging: Cross chooses the row (%s)" % pack.selected)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(pack.is_open and not pack.notebook_open and not pack.choosing, "foraging: Circle goes back to the list first")
+	var row_before: String = pack.selected
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(pack.selected != row_before, "foraging: the D-pad steps to the other row (%s)" % pack.selected)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(pack.notebook_open or pack.choosing, "foraging: Cross chooses that row too (%s)" % pack.selected)
+	if pack.choosing:
+		var answer_before: int = pack.choice
+		_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+		check(pack.choice != answer_before, "foraging: the D-pad switches the answer of the question")
+		_tap_pad(viewport, JOY_BUTTON_B)
+		check(pack.is_open and not pack.choosing, "foraging: Circle cancels the question and keeps the panel")
+	elif pack.notebook_open:
+		_tap_pad(viewport, JOY_BUTTON_B)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not pack.is_open and not get_tree().paused, "foraging: Circle closes the backpack")
+	_tap_pad(viewport, JOY_BUTTON_X)
+	_tap_pad(viewport, JOY_BUTTON_X)
+	check(not pack.is_open and not get_tree().paused, "foraging: Square closes it as it opened it")
+	_tap_pad(viewport, JOY_BUTTON_TOUCHPAD)
+	await _settle_layout()
+	check(pack.is_open and pack.notebook_open and bag.notebook_visible(), "foraging: the touchpad opens the notebook")
+	var page: String = bag.notebook_text()
+	_tap_pad(viewport, JOY_BUTTON_DPAD_LEFT)
+	check(bag.notebook_text() != page, "foraging: the D-pad flips a page (%s)" % bag.notebook_text().replace("\n", " "))
+	_tap_pad(viewport, JOY_BUTTON_TOUCHPAD)
+	check(not pack.is_open and not get_tree().paused, "foraging: the touchpad closes it")
+	_tap_pad(viewport, JOY_BUTTON_BACK)
+	check(pack.is_open and pack.notebook_open, "foraging: Share/Create opens the notebook as well")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not pack.is_open and not get_tree().paused, "foraging: Circle closes the notebook")
+	_tap_pad(viewport, JOY_BUTTON_TOUCHPAD, 1)
+	check(pack.is_open and pack.notebook_open and pack.notebook_key == "notebook_p2", "foraging: the second controller's touchpad is notebook_p2")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not pack.is_open, "(setup) closed")
+	var wsel = map.discovery_hud.word_select
+	var ids: Array = map.discovery_hud.spellable_ids()
+	check(ids.size() >= 3, "(setup) at least three words can be spelled")
+	_tap_pad(viewport, JOY_BUTTON_Y)
+	check(wsel.is_open() and wsel.highlighted() == ids[0], "foraging: Triangle opens word select on the first word")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(wsel.highlighted() == ids[1], "foraging: the D-pad moves the highlight")
+	for value in [1.0, 0.95, 0.8]:
+		viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, value))
+	check(wsel.highlighted() == ids[2], "foraging: a stick held down moves it by one word")
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, 0.0))
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, -1.0))
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_Y, 0.0))
+	check(wsel.highlighted() == ids[1], "foraging: pushed up it goes back by one")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not wsel.is_open() and not map.spelling_hud.is_open() and not _menu_open(map), "foraging: Circle closes word select (no menu, no spelling)")
+	_tap_pad(viewport, JOY_BUTTON_Y)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(map.spelling_hud.is_open() and map.spelling.open_id == ids[1] and get_tree().paused, "foraging: Cross opens the highlighted word's spelling view")
+	var cursor = map.spelling_hud.cursor
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT, 1)
+	check(not cursor.shown, "foraging: the other player's controller does nothing in player 1's turn")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+	check(cursor.shown and cursor.index == 0, "foraging: the D-pad shows the cursor on the first tile")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+	check(cursor.index == 1, "foraging: the D-pad moves the cursor")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not map.spelling_hud.is_open() and not get_tree().paused and not _menu_open(map), "foraging: Circle closes the spelling view")
+	map.free()
+	get_tree().paused = false
+
+	# ---- The animal scene ----
+	GameState.new_hike()
+	map = await _animals_map(5)
+	viewport = map.get_viewport()
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(map.pause_menu.is_open and get_tree().paused, "animals: Options opens the pause menu and pauses the tree")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(map.pause_menu.confirming, "animals: the D-pad and Cross reach the restart question")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(map.pause_menu.is_open and not map.pause_menu.confirming, "animals: Circle goes back from the question")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not map.pause_menu.is_open and not get_tree().paused, "animals: Options closes the menu")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not map.pause_menu.is_open and not get_tree().paused, "animals: Circle closes it as well")
+	_tap_pad(viewport, JOY_BUTTON_X)
+	check(map.backpack.is_open, "animals: Square opens the backpack")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(map.backpack.is_open and not map.pause_menu.is_open, "animals: Options opens no menu over the backpack")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not map.backpack.is_open and not get_tree().paused, "animals: Circle closes the backpack")
+	# Tools: R1 next, L1 previous (the keys R and F do the same).
+	GameState.tools.clear()
+	var net: int = GameState.tools.add("tteulchae")
+	var skewer: int = GameState.tools.add("jamjarichae")
+	GameState.tools.equip(0)
+	_tap_pad(viewport, JOY_BUTTON_RIGHT_SHOULDER)
+	check(GameState.tools.equipped_uid() == net, "animals: R1 equips the next tool")
+	_tap_pad(viewport, JOY_BUTTON_RIGHT_SHOULDER)
+	check(GameState.tools.equipped_uid() == skewer, "animals: R1 again equips the one after")
+	_tap_pad(viewport, JOY_BUTTON_LEFT_SHOULDER)
+	check(GameState.tools.equipped_uid() == net, "animals: L1 goes back one")
+	_tap_pad(viewport, JOY_BUTTON_LEFT_SHOULDER)
+	check(GameState.tools.equipped_uid() == 0, "animals: L1 goes back to Hands")
+	_tap_pad(viewport, JOY_BUTTON_LEFT_SHOULDER)
+	check(GameState.tools.equipped_uid() == skewer, "animals: L1 from Hands wraps to the last tool")
+	_tap(viewport, KEY_F)
+	check(GameState.tools.equipped_uid() == net, "animals: F is the keyboard's previous tool")
+	_tap(viewport, KEY_R)
+	check(GameState.tools.equipped_uid() == skewer, "animals: R is the keyboard's next tool")
+	GameState.tools.clear()
+	map.free()
+	get_tree().paused = false
+
+	# ---- The animal scene: Cross grabs, for either player ----
+	var grabs := {"Cross on device 0": _pad_button(JOY_BUTTON_A, true, 0), "Cross on device 1 (p2_pick)": _pad_button(JOY_BUTTON_A, true, 1), "Enter (p2_pick)": _key_event(KEY_ENTER), "Space": _key_event(KEY_SPACE)}
+	for label in grabs:
+		GameState.new_hike()
+		map = await _animals_map(8)
+		var walker = _spawn_kind(map, "noru")
+		check(walker != null, "(setup) a 노루 for %s" % label)
+		_beside(map, walker, Vector2(0.4, 0.0))
+		var basket_before: int = map.picking.basket.size()
+		var letter: String = walker.letter
+		map.step(Vector2.ZERO, 0.0)
+		map.grab_rng.seed = _roll_seed(float(_kind_data("noru")["grab"]["bite_chance"]), true)
+		map.get_viewport().push_input(grabs[label])
+		check(map.picking.basket.size() == basket_before + 1 and map.picking.basket.back() == letter and walker.letter == "", "animals: %s grabs the animal's letter" % label)
+		map.free()
+	GameState.new_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+	InputPrompts.reset()
+	_section_done("test_gamepad_scenes")
+
+
+# ---- Settings, vibration, remapping and the pause menu's two new screens (Prompt C2) ----
+# Nothing here touches the real settings file, a window or a controller: the path is a temp file,
+# the window change and the rumble go through functions that count.
+
+const C2_PATH := "user://test_c2_settings.cfg"
+
+var _window_calls: Array = []
+var _rumbles: Array = []
+
+
+func _c2_begin() -> void:
+	Settings.path = C2_PATH
+	_window_calls.clear()
+	_rumbles.clear()
+	Settings.window_fn = func(full: bool) -> void: _window_calls.append(full)
+	Vibration.rumble_fn = func(device: int, weak: float, strong: float, seconds: float) -> void: _rumbles.append([device, weak, strong, seconds])
+	if FileAccess.file_exists(C2_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(C2_PATH))
+	Settings.load_settings()
+
+
+func _c2_end() -> void:
+	if FileAccess.file_exists(C2_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(C2_PATH))
+	Settings.remap.reset_all()
+	Settings.path = RUN_PATH
+	Settings.window_fn = func(_full: bool) -> void: pass
+	Vibration.rumble_fn = func(_d: int, _w: float, _s: float, _t: float) -> void: pass
+	Settings.load_settings()
+
+
+func _write_cfg(text: String) -> void:
+	var file := FileAccess.open(C2_PATH, FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
+
+
+func test_settings_c2() -> void:
+	_c2_begin()
+	# Defaults.
+	check(Settings.master_volume == 10 and Settings.music_volume == 10 and Settings.sfx_volume == 10 and not Settings.fullscreen and Settings.vibration, "defaults: all volumes 10, windowed, vibration on")
+	check(Settings.path == C2_PATH and not FileAccess.file_exists(C2_PATH), "(setup) a temp settings file, not the real one")
+	# Buses.
+	for bus in ["Master", "Music", "SFX"]:
+		check(AudioServer.get_bus_index(bus) >= 0, "the %s bus exists" % bus)
+	check(AudioServer.get_bus_send(AudioServer.get_bus_index("Music")) == &"Master" and AudioServer.get_bus_send(AudioServer.get_bus_index("SFX")) == &"Master", "Music and SFX send to Master")
+	var buses_before := AudioServer.bus_count
+	Settings.ensure_buses()
+	check(AudioServer.bus_count == buses_before, "making the buses again adds none")
+	check(is_equal_approx(Settings.volume_db(10), 0.0) and absf(Settings.volume_db(5) - (-6.0206)) < 0.01 and Settings.volume_db(1) < Settings.volume_db(2) and Settings.volume_db(0) <= -80.0, "step to dB: 10 is 0 dB, 5 is -6 dB, each step lower is quieter, 0 is silence")
+	var music := AudioServer.get_bus_index("Music")
+	Settings.set_volume("music", 5)
+	check(Settings.music_volume == 5 and absf(AudioServer.get_bus_volume_db(music) - Settings.volume_db(5)) < 0.001 and not AudioServer.is_bus_mute(music), "music 5: the Music bus is at -6 dB and not muted")
+	Settings.set_volume("music", 0)
+	check(AudioServer.is_bus_mute(music) and Settings.music_volume == 0, "music 0 mutes the Music bus")
+	Settings.set_volume("music", 14)
+	check(Settings.music_volume == 10 and not AudioServer.is_bus_mute(music) and is_equal_approx(AudioServer.get_bus_volume_db(music), 0.0), "a step above 10 is 10, unmuted, 0 dB")
+	Settings.set_volume("master", 3)
+	Settings.set_volume("sfx", 7)
+	check(absf(AudioServer.get_bus_volume_db(0) - Settings.volume_db(3)) < 0.001 and absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("SFX")) - Settings.volume_db(7)) < 0.001, "master and effects drive the Master and SFX buses")
+	# The players that were routed.
+	for case in [["res://scenes/foraging/countdown_music.gd", "bus = Settings.BUS_MUSIC"], ["res://scenes/foraging/foraging.gd", "bus = Settings.BUS_SFX"], ["res://scenes/animals/animals.gd", "bus = Settings.BUS_SFX"]]:
+		check(FileAccess.get_file_as_string(case[0]).contains(case[1]), "%s routes its player: %s" % [case[0], case[1]])
+	# The display.
+	Settings.set_fullscreen(true)
+	check(Settings.fullscreen and _window_calls.back() == true, "fullscreen on asks the window for fullscreen")
+	Settings.set_fullscreen(false)
+	check(not Settings.fullscreen and _window_calls.back() == false, "...and off for windowed")
+	var calls_before := _window_calls.size()
+	Settings.set_fullscreen(false)
+	check(_window_calls.size() == calls_before, "setting it to what it is changes nothing")
+	# The file.
+	Settings.set_volume("master", 7)
+	Settings.set_volume("music", 0)
+	Settings.set_volume("sfx", 3)
+	Settings.set_fullscreen(true)
+	Settings.set_vibration(false)
+	Settings.set_romanization(true)
+	check(FileAccess.file_exists(C2_PATH), "a change is saved at once")
+	Settings.master_volume = 10  # wipe the memory, then read the file
+	Settings.music_volume = 10
+	Settings.sfx_volume = 10
+	Settings.fullscreen = false
+	Settings.vibration = true
+	Settings.romanization = false
+	_window_calls.clear()
+	Settings.load_settings()
+	check(Settings.master_volume == 7 and Settings.music_volume == 0 and Settings.sfx_volume == 3 and Settings.fullscreen and not Settings.vibration and Settings.romanization, "volumes, display, vibration and subtitles survive save + load")
+	check(AudioServer.is_bus_mute(music) and absf(AudioServer.get_bus_volume_db(0) - Settings.volume_db(7)) < 0.001, "loading applies them to the buses")
+	check(_window_calls.back() == true, "loading applies the display mode")
+	# A file with some bad entries: those are the defaults, the good ones stay.
+	_write_cfg("[settings]\nmaster_volume=\"loud\"\nmusic_volume=99\nsfx_volume=2.5\nfullscreen=3\nvibration=false\nromanization=\"yes\"\n[controls]\np1_pick=\"abc\"\nbogus={\"key\": [1, 0]}\np2_pick={\"key\": [1, 2, 3]}\ntool_next={\"pad\": 9999}\nspell_open={\"key\": [\"x\", 0]}\n")
+	Settings.load_settings()
+	check(Settings.master_volume == 10 and Settings.music_volume == 10 and Settings.sfx_volume == 10 and not Settings.fullscreen and not Settings.vibration and not Settings.romanization, "bad entries fall back to their defaults, a good one stays (vibration off)")
+	check(_bound_keys("p1_pick") == [[KEY_SPACE, 0]] and _bound_keys("p2_pick") == [[KEY_ENTER, 0], [KEY_KP_ENTER, 2]] and _bound_keys("tool_next") == [[KEY_R, 0]] and _has_pad_button("tool_next", JOY_BUTTON_RIGHT_SHOULDER, 0), "bad control entries change no binding")
+	# A file that is not a settings file at all.
+	_write_cfg("this is [not" + char(10) + "valid = = =" + char(10) + char(1) + char(2))
+	Settings.load_settings()
+	check(Settings.master_volume == 10 and Settings.vibration and not Settings.fullscreen and _bound_keys("p1_pick") == [[KEY_SPACE, 0]], "a corrupt file gives every default")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(C2_PATH))
+	Settings.load_settings()
+	check(Settings.master_volume == 10 and Settings.vibration, "a missing file gives every default")
+	# Vibration.
+	_rumbles.clear()
+	Settings.set_vibration(false)
+	check(not Vibration.rumble(1.0, 200) and _rumbles.is_empty(), "vibration off: rumble() does nothing")
+	Settings.set_vibration(true)
+	check(Vibration.rumble(0.8, 200, 1) and _rumbles.size() == 1 and _rumbles[0][0] == 1 and is_equal_approx(_rumbles[0][2], 0.8) and is_equal_approx(_rumbles[0][3], 0.2), "vibration on: rumble() sends strength and duration to the device given")
+	Vibration.rumble(0.5, 100)
+	check(_rumbles.back()[0] == 0, "with no device it is controller 0")
+	check(not Vibration.rumble(0.0, 100) and not Vibration.rumble(1.0, 0), "no strength or no time is no rumble")
+	# The three trigger points, and nothing else.
+	_rumbles.clear()
+	GameState.new_hike()
+	GameState.controlled = "fernanda"
+	GameState.damage_units("fernanda", 1)
+	check(_rumbles.size() == 1 and _rumbles[0][0] == 0, "a hit rumbles once, on controller 0 (the controlled traveler)")
+	_rumbles.clear()
+	GameState.damage_units("nestor", 100)
+	check(_rumbles.size() == 2 and _rumbles[1][2] > _rumbles[0][2], "a hit that downs a traveler rumbles for the hit and then harder for the downing")
+	_rumbles.clear()
+	GameState.damage_units("nestor", 1)
+	check(_rumbles.is_empty(), "a downed traveler taking no more is no rumble")
+	GameState.revive("nestor", 2)
+	check(_rumbles.size() == 1, "a revive completing rumbles once")
+	_rumbles.clear()
+	GameState.revive("nestor", 2)
+	GameState.heal("fernanda", 1)
+	GameState.inventory.add("ssanghwatang")
+	check(_rumbles.is_empty(), "a failed revive and a heal do not rumble")
+	Settings.set_vibration(false)
+	GameState.damage_units("fernanda", 1)
+	GameState.damage_units("nestor", 100)
+	GameState.revive("nestor", 2)
+	check(_rumbles.is_empty(), "with vibration off none of the three rumbles")
+	_bare_hike()
+	_c2_end()
+	_section_done("test_settings_c2")
+
+
+func test_remap_c2() -> void:
+	_c2_begin()
+	var remap = Settings.remap
+	var rows: Array = remap.rows
+	var actions: Array = rows.map(func(r): return r["action"])
+	for action in ["p1_left", "p1_right", "p1_up", "p1_down", "p2_left", "p2_right", "p2_up", "p2_down", "p1_pick", "p2_pick", "spell_open", "tool_next", "tool_prev", "backpack_p1", "notebook_p1"]:
+		check(actions.has(action), "%s is a remappable row" % action)
+	for fixed in ["pause", "select_up", "select_confirm", "select_cancel", "ui_accept", "ui_cancel", "ui_up", "backpack_p2", "notebook_p2"]:
+		check(not actions.has(fixed), "%s is not remappable" % fixed)
+	for row in rows:
+		check(String(row["label"]) != "" and (row["slots"] as Array).size() > 0, "row %s has a label and a slot" % row["action"])
+		if String(row["action"]).ends_with("_left") or String(row["action"]).ends_with("_up") or String(row["action"]).ends_with("_down") or String(row["action"]).ends_with("_right"):
+			check(row["slots"] == ["key"], "%s has a keyboard slot only" % row["action"])
+	var pause_before := InputMap.action_get_events("pause").map(func(e): return e.as_text())
+	InputPrompts.note_event(_key_event(KEY_SPACE))
+	# Bind a key; the alternates stay.
+	var r: Dictionary = remap.bind_key("p1_pick", _key_event(KEY_G))
+	check(r["result"] == "ok" and _bound_keys("p1_pick") == [[KEY_G, 0]], "p1_pick is bound to G")
+	check(InputPrompts.label_for("p1_pick") == "G", "label_for follows the remap: G")
+	r = remap.bind_key("p2_pick", _key_event(KEY_H))
+	check(r["result"] == "ok" and _bound_keys("p2_pick") == [[KEY_H, 0], [KEY_KP_ENTER, 2]], "p2_pick: its first key is replaced, the keypad Enter stays")
+	check(remap.bind_key("p1_pick", _key_event(KEY_G))["result"] == "ok" and _bound_keys("p1_pick") == [[KEY_G, 0]], "binding what it already is changes nothing")
+	var guide = GuideScript.new(Content.mountain("hallasan")["animals"]["guide"], {})
+	guide.trigger("grab")
+	check(guide.text() == "Grab letters from animals: G or click.", "the guide text follows the remap at once")
+	# A conflict swaps.
+	r = remap.bind_key("p1_pick", _key_event(KEY_H))
+	check(r["result"] == "swap" and r["other"] == "p2_pick" and _bound_keys("p1_pick") == [[KEY_H, 0]] and _bound_keys("p2_pick") == [[KEY_G, 0], [KEY_KP_ENTER, 2]], "binding H, which p2_pick has, swaps: p1_pick H, p2_pick G")
+	r = remap.bind_key("p1_left", _key_event(KEY_D))
+	check(r["result"] == "swap" and _bound_keys("p1_left") == [[KEY_D, 0]] and _bound_keys("p1_right") == [[KEY_A, 0]], "movement keys swap too: A and D")
+	# Reserved inputs are refused.
+	for case in [[KEY_ESCAPE, "Esc"]]:
+		r = remap.bind_key("p1_up", _key_event(case[0]))
+		check(r["result"] == "reserved" and _bound_keys("p1_up") == [[KEY_W, 0]], "%s is reserved: refused, nothing changed" % case[1])
+	check(remap.bind_pad("p1_pick", JOY_BUTTON_START)["result"] == "reserved" and _has_pad_button("p1_pick", JOY_BUTTON_A, 0), "Options is reserved")
+	check(remap.bind_pad("p1_pick", JOY_BUTTON_B)["result"] == "reserved" and _has_pad_button("p1_pick", JOY_BUTTON_A, 0), "Circle (ui_cancel) is reserved")
+	check(remap.bind_pad("spell_open", JOY_BUTTON_DPAD_UP)["result"] == "reserved", "a D-pad button (ui_up) is reserved for the button slots")
+	check(remap.bind_key("pause", _key_event(KEY_G))["result"] == "invalid" and remap.bind_key("ui_accept", _key_event(KEY_G))["result"] == "invalid" and remap.bind_key("select_up", _key_event(KEY_G))["result"] == "invalid", "pause, ui_* and select_* cannot be rebound")
+	check(remap.bind_pad("p1_left", JOY_BUTTON_A)["result"] == "invalid" and remap.bind_pad("pause", JOY_BUTTON_A)["result"] == "invalid" and remap.bind_key("p1_left", _key_event(KEY_NONE))["result"] == "invalid", "stick and D-pad movement and pause take no pad rebinding")
+	check(InputMap.action_get_events("pause").map(func(e): return e.as_text()) == pause_before, "pause still has exactly Esc and Options")
+	# Gamepad slots.
+	var r2: Dictionary = remap.bind_pad("spell_open", JOY_BUTTON_LEFT_SHOULDER)
+	check(r2["result"] == "swap" and r2["other"] == "tool_prev" and _has_pad_button("spell_open", JOY_BUTTON_LEFT_SHOULDER, 0) and _has_pad_button("tool_prev", JOY_BUTTON_Y, 0), "L1 swaps: spell_open L1, tool_prev Triangle")
+	InputPrompts.note_event(_pad_button(JOY_BUTTON_A))
+	check(InputPrompts.label_for("spell_open") == "L1" and InputPrompts.label_for("tool_prev") == "△", "label_for follows the pad remap")
+	r2 = remap.bind_pad("p2_pick", JOY_BUTTON_X)
+	check(r2["result"] == "ok" and _has_pad_button("p2_pick", JOY_BUTTON_X, 1) and _has_pad_button("backpack_p1", JOY_BUTTON_X, 0), "Square on player 2's pad is free even though player 1's backpack has it")
+	r2 = remap.bind_pad("notebook_p1", JOY_BUTTON_RIGHT_STICK)
+	check(r2["result"] == "ok" and _has_pad_button("notebook_p1", JOY_BUTTON_RIGHT_STICK, 0) and _has_pad_button("notebook_p1", JOY_BUTTON_BACK, 0), "notebook_p1: the touchpad slot is replaced, Share/Create stays")
+	# Saved: only what differs.
+	var changes: Dictionary = remap.changes()
+	check(changes.has("p1_pick") and changes["p1_pick"]["key"] == [KEY_H, 0] and changes["p2_pick"]["key"] == [KEY_G, 0] and changes["spell_open"]["pad"] == JOY_BUTTON_LEFT_SHOULDER and not changes.has("p1_up") and not changes.has("tool_next"), "changes() holds exactly the slots that differ")
+	Settings.save_settings()
+	remap.reset_all()
+	check(_bound_keys("p1_pick") == [[KEY_SPACE, 0]] and _bound_keys("p2_pick") == [[KEY_ENTER, 0], [KEY_KP_ENTER, 2]] and _bound_keys("p1_left") == [[KEY_A, 0]] and _bound_keys("p1_right") == [[KEY_D, 0]], "reset restores the keys of project.godot")
+	check(_has_pad_button("spell_open", JOY_BUTTON_Y, 0) and _has_pad_button("tool_prev", JOY_BUTTON_LEFT_SHOULDER, 0) and _has_pad_button("p2_pick", JOY_BUTTON_A, 1) and _has_pad_button("notebook_p1", JOY_BUTTON_TOUCHPAD, 0) and remap.changes().is_empty(), "...and the buttons; nothing differs any more")
+	Settings.load_settings()
+	check(_bound_keys("p1_pick") == [[KEY_H, 0]] and _bound_keys("p2_pick") == [[KEY_G, 0], [KEY_KP_ENTER, 2]] and _has_pad_button("spell_open", JOY_BUTTON_LEFT_SHOULDER, 0) and _has_pad_button("tool_prev", JOY_BUTTON_Y, 0) and _has_pad_button("p2_pick", JOY_BUTTON_X, 1), "the remaps come back from the file")
+	check(InputMap.action_get_deadzone("p1_left") == 0.5 and InputMap.action_has_event("p1_left", _pad_axis(JOY_AXIS_LEFT_X, -1.0, 0)), "a remapped movement action keeps its stick and dead zone")
+	remap.reset_all()
+	Settings.save_settings()
+	check(not FileAccess.get_file_as_string(C2_PATH).contains("[controls]"), "after a reset the file holds no controls section")
+	InputPrompts.reset()
+	_c2_end()
+	_section_done("test_remap_c2")
+
+
+## Walks the open pause menu's focus to `entry` (0..3) with the D-pad and opens it with Cross.
+func _open_pause_screen(viewport: Viewport, entry: int) -> void:
+	for i in entry:
+		_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_A)
+
+
+func test_pause_screens_c2() -> void:
+	_c2_begin()
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	var map: Node3D = await _stuck_map()
+	var viewport := map.get_viewport()
+	var menu = map.pause_menu
+	var hud = map.pause_hud
+	var screen: Vector2 = viewport.get_visible_rect().size
+	_tap(viewport, KEY_ESCAPE)
+	await _settle_layout()
+	check(menu.is_open and hud._buttons.size() == 4 and hud._buttons[0].text == "Resume" and hud._buttons[1].text == "Restart scene" and hud._buttons[2].text == "Settings" and hud._buttons[3].text == "Controls", "the menu offers Resume, Restart scene, Settings and Controls")
+	var panel: Rect2 = hud.panel_rect()
+	var all_inside := true
+	for i in 4:
+		all_inside = all_inside and panel.encloses(hud.button_rect(i)) and hud._buttons[i].visible
+		if i > 0:
+			all_inside = all_inside and not hud.button_rect(i).intersects(hud.button_rect(i - 1))
+	check(all_inside and Rect2(Vector2.ZERO, screen).encloses(panel), "all four buttons are visible, inside the panel and apart")
+
+	# ---- Settings ----
+	_open_pause_screen(viewport, 2)
+	await _settle_layout()
+	check(menu.sub == "settings" and hud.title_text().contains("Settings") and hud.sub_row_count() == 6 and not hud._buttons[0].visible, "Cross on Settings opens the Settings screen: six rows, the buttons gone")
+	var sub_panel: Rect2 = hud.panel_rect()
+	check(Rect2(Vector2.ZERO, screen).encloses(sub_panel) and sub_panel.encloses(hud._scroll.get_global_rect()), "the Settings panel is inside the screen")
+	var logic = hud.settings_logic()
+	check(logic.focus == 0 and logic.rows[0]["id"] == "master" and logic.value_text(0) == "10 / 10", "it starts on Master volume, at 10 / 10")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+	check(Settings.master_volume == 10, "right at 10 stays 10")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_LEFT)
+	check(Settings.master_volume == 9 and logic.value_text(0) == "9 / 10" and int(hud._row_nodes[0]["slider"].value) == 9, "left lowers Master to 9; the slider and the text follow")
+	check(absf(AudioServer.get_bus_volume_db(0) - Settings.volume_db(9)) < 0.001, "...and the Master bus follows live")
+	_tap(viewport, KEY_A)
+	check(Settings.master_volume == 8, "the keyboard (A) lowers it too")
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_X, 1.0))
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_X, 0.9))
+	viewport.push_input(_pad_axis(JOY_AXIS_LEFT_X, 0.0))
+	check(Settings.master_volume == 9, "a stick pushed right once is one step")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(logic.focus == 1 and logic.rows[1]["id"] == "music", "down moves to Music volume")
+	for i in 10:
+		_tap_pad(viewport, JOY_BUTTON_DPAD_LEFT)
+	check(Settings.music_volume == 0 and logic.value_text(1) == "Muted" and AudioServer.is_bus_mute(AudioServer.get_bus_index("Music")), "ten lefts: Music is Muted and the bus is muted")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_LEFT)
+	check(Settings.sfx_volume == 9, "Effects volume is its own row")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(logic.rows[logic.focus]["id"] == "fullscreen" and logic.value_text(3) == "Windowed", "the Display row reads Windowed")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(Settings.fullscreen and _window_calls.back() == true and logic.value_text(3) == "Fullscreen", "Cross toggles it to Fullscreen (through the window function)")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_LEFT)
+	check(not Settings.fullscreen and _window_calls.back() == false, "left sets it back to Windowed")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(logic.rows[logic.focus]["id"] == "vibration" and Settings.vibration and logic.value_text(4) == "On", "the Vibration row reads On")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(not Settings.vibration and logic.value_text(4) == "Off", "Cross turns it Off")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+	check(Settings.vibration, "right turns it On")
+	check(menu.is_open and menu.sub == "settings" and get_tree().paused, "all of that happened with the menu open and the tree paused")
+	var saved_cfg := ConfigFile.new()
+	saved_cfg.load(C2_PATH)
+	check(saved_cfg.get_value("settings", "music_volume") == 0 and saved_cfg.get_value("settings", "master_volume") == 9, "the changes are in the file")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(menu.is_open and menu.sub == "" and menu.focus == 2, "the Back row returns to the menu, on Settings")
+	_open_pause_screen(viewport, 0)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(menu.is_open and menu.sub == "" and menu.focus == 2 and get_tree().paused, "Circle goes back from Settings one level (the menu stays open)")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not menu.is_open and not get_tree().paused, "Options inside Settings closes the whole menu")
+
+	# ---- Controls ----
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_open_pause_screen(viewport, 3)
+	await _settle_layout()
+	var controls = hud.controls_logic()
+	check(menu.sub == "controls" and hud.title_text().contains("Controls") and controls != null and hud.sub_row_count() == controls.rows.size() and controls.rows.size() == Settings.remap.rows.size() + 2, "Cross on Controls opens it: one row per remappable action, then Reset and Back")
+	check(Rect2(Vector2.ZERO, screen).encloses(hud.panel_rect()) and hud.panel_rect().encloses(hud._scroll.get_global_rect()), "the Controls panel is inside the screen")
+	var pick_row := -1
+	for i in controls.rows.size():
+		if controls.rows[i].get("action", "") == "p1_pick":
+			pick_row = i
+	check(pick_row >= 0, "(setup) the p1_pick row")
+	for i in pick_row:
+		_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(controls.focus == pick_row and controls.slot_text(pick_row, 0) == "Space" and controls.slot_text(pick_row, 1) == InputPrompts.pad_label_of("p1_pick"), "down walks to the p1_pick row: Space and the button, by the same names as the prompts")
+	check(controls.slot_text(0, 1) == "-" , "a movement row has no button slot")
+	# Capture a key.
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(controls.capturing == "key" and hud.notice_text() == "Press a key..." and controls.slot_text(pick_row, 0) == "Press a key...", "Cross starts a key capture: 'Press a key...'")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(menu.is_open and menu.sub == "controls" and controls.capturing == "key" and controls.focus == pick_row and _has_key("p1_pick", KEY_SPACE), "while capturing a key, Options, the D-pad and Circle do nothing")
+	_tap(viewport, KEY_ESCAPE)
+	check(controls.capturing == "" and menu.is_open and menu.sub == "controls" and _bound_keys("p1_pick") == [[KEY_SPACE, 0]], "Esc cancels the capture; the menu and the screen stay; nothing is bound")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap(viewport, KEY_G)
+	check(controls.capturing == "" and _bound_keys("p1_pick") == [[KEY_G, 0]] and controls.slot_text(pick_row, 0) == "G", "the next key (G) is bound and shown")
+	check(menu.is_open and menu.sub == "controls", "the captured key did not reach the menu or the map")
+	var probe := KeyProbe.new()
+	probe.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(probe)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap(viewport, KEY_Q)  # Q is the notebook's key: a swap
+	check(_bound_keys("p1_pick") == [[KEY_Q, 0]] and _bound_keys("notebook_p1") == [[KEY_G, 0]] and hud.notice_text() == "Swapped with Notebook (수첩).", "a key another action has swaps (%s)" % hud.notice_text())
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap(viewport, KEY_ESCAPE)
+	check(probe.seen == 0, "no captured key reached the unhandled stage (%d)" % probe.seen)
+	probe.queue_free()
+	# Capture a button.
+	_tap_pad(viewport, JOY_BUTTON_DPAD_RIGHT)
+	check(controls.slot == 1, "right moves to the button slot")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(controls.capturing == "pad" and hud.notice_text() == "Press a button...", "Cross starts a button capture")
+	_tap(viewport, KEY_ESCAPE)
+	_tap(viewport, KEY_S)
+	check(controls.capturing == "pad" and menu.is_open, "Esc and other keys do nothing during a button capture")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(controls.capturing == "" and menu.is_open and menu.sub == "controls" and _has_pad_button("p1_pick", JOY_BUTTON_A, 0), "Options cancels a button capture; the menu stays open")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(controls.capturing == "" and hud.notice_text() == "That input is reserved." and _has_pad_button("p1_pick", JOY_BUTTON_A, 0), "a reserved button (Circle) is refused with a message")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_X)
+	check(_has_pad_button("p1_pick", JOY_BUTTON_X, 0) and _has_pad_button("backpack_p1", JOY_BUTTON_A, 0) and hud.notice_text().begins_with("Swapped with Backpack"), "Square, which the backpack has, swaps: the backpack gets Cross")
+	_tap_pad(viewport, JOY_BUTTON_A, 0)
+	_tap_pad(viewport, JOY_BUTTON_Y, 0)
+	check(_has_pad_button("p1_pick", JOY_BUTTON_Y, 0) and _has_pad_button("spell_open", JOY_BUTTON_X, 0), "(another swap, to see that a button binds by its own device)")
+	# The timeout.
+	controls.activate()
+	check(controls.capturing == "pad", "(setup) a capture is running")
+	hud.tick(2.0)
+	check(controls.capturing == "pad", "after 2 s it still waits")
+	hud.tick(3.1)
+	check(controls.capturing == "" and hud.notice_text() == "", "after 5 s it gives up, nothing bound")
+	# Reset.
+	controls.focus_on(controls.rows.size() - 2)
+	hud.refresh()
+	check(controls.rows[controls.focus]["id"] == "reset", "(setup) the Reset row")
+	var changed_before: int = Settings.remap.changes().size()
+	check(changed_before > 0, "(setup) some bindings differ")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(controls.reset_armed and Settings.remap.changes().size() == changed_before and hud.notice_text().contains("again"), "the first Cross only asks")
+	_tap_pad(viewport, JOY_BUTTON_DPAD_UP)
+	_tap_pad(viewport, JOY_BUTTON_DPAD_DOWN)
+	check(not controls.reset_armed, "moving away disarms the question")
+	_tap_pad(viewport, JOY_BUTTON_A)
+	_tap_pad(viewport, JOY_BUTTON_A)
+	check(Settings.remap.changes().is_empty() and _bound_keys("p1_pick") == [[KEY_SPACE, 0]] and _has_pad_button("p1_pick", JOY_BUTTON_A, 0) and _has_pad_button("spell_open", JOY_BUTTON_Y, 0), "the second Cross resets every binding")
+	# Back by Circle, one level.
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(menu.is_open and menu.sub == "" and menu.focus == 3, "Circle leaves Controls for the menu, on Controls")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	check(not menu.is_open and not get_tree().paused, "Circle on the menu resumes")
+	# Esc and the keyboard reach the same screens.
+	_tap(viewport, KEY_ESCAPE)
+	_tap(viewport, KEY_S)
+	_tap(viewport, KEY_S)
+	_tap(viewport, KEY_SPACE)
+	check(menu.sub == "settings", "the keyboard: S, S, Space opens Settings")
+	_tap(viewport, KEY_ESCAPE)
+	check(menu.is_open and menu.sub == "" and menu.focus == 2, "Esc goes back one level")
+	_tap(viewport, KEY_DOWN)
+	_tap(viewport, KEY_ENTER)
+	check(menu.sub == "controls", "Down, Enter opens Controls")
+	_tap(viewport, KEY_ESCAPE)
+	_tap(viewport, KEY_ESCAPE)
+	check(not menu.is_open, "Esc, Esc closes the menu")
+	# A click on a row works as well.
+	_tap(viewport, KEY_ESCAPE)
+	_tap(viewport, KEY_S)
+	_tap(viewport, KEY_S)
+	_tap(viewport, KEY_SPACE)
+	await _settle_layout()
+	var vib_at: Vector2 = hud.row_rect(4).get_center()
+	viewport.push_input(_click_event(vib_at))
+	viewport.push_input(_release_event(vib_at))
+	check(not Settings.vibration, "a click on the Vibration row flips it")
+	Settings.set_vibration(true)
+	map.free()
+	get_tree().paused = false
+
+	# ---- The animal scene: the same screens, and its roar on the SFX bus ----
+	GameState.new_hike()
+	AnimalsScript.timer_enabled = true
+	map = await _animals_map(5)
+	AnimalsScript.timer_enabled = false
+	viewport = map.get_viewport()
+	check(map.roar_player != null and map.roar_player.bus == &"SFX", "animals: the bear's roar player is on the SFX bus")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	_open_pause_screen(viewport, 2)
+	check(map.pause_menu.sub == "settings" and map.pause_hud.sub_row_count() == 6, "animals: Settings opens")
+	_tap_pad(viewport, JOY_BUTTON_B)
+	_open_pause_screen(viewport, 1)
+	check(map.pause_menu.sub == "controls" and map.pause_hud.sub_row_count() == map.pause_hud.controls_logic().rows.size(), "animals: Controls opens")
+	_tap_pad(viewport, JOY_BUTTON_START)
+	check(not map.pause_menu.is_open and not get_tree().paused, "animals: Options closes the menu from a sub screen")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+	InputPrompts.reset()
+	_c2_end()
+	_section_done("test_pause_screens_c2")

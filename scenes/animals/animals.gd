@@ -314,20 +314,23 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	step(Input.get_vector("p1_left", "p1_right", "p1_up", "p1_down"), delta)
+	step(InputPrompts.walk_vector(1), delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+	if event.is_action_pressed("pause"):
 		open_pause_menu()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		click(event.position)
-	elif event.is_action_pressed("p1_pick"):  # no echo: holding Space grabs once
+	elif event.is_action_pressed("p1_pick") or event.is_action_pressed("p2_pick"):  # no echo: holding the key grabs once
 		pick_nearest()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("tool_next"):
 		cycle_tool()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("tool_prev"):
+		cycle_tool(-1)
 		get_viewport().set_input_as_handled()
 	elif debug_kit and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
 		debug_complete_need()
@@ -1242,12 +1245,13 @@ func equipped_gloves() -> Dictionary:
 	return held
 
 
-## R: the next of Hands and the tools in the backpack (not while a menu is up or a traveler is
-## down). Returns the uid now equipped (0 = Hands), or -1 if nothing was done.
-func cycle_tool() -> int:
+## R (tool_next, R1) or F (tool_prev, L1): the next or previous of Hands and the tools in the
+## backpack (not while a menu is up or a traveler is down). Returns the uid now equipped
+## (0 = Hands), or -1 if nothing was done.
+func cycle_tool(direction := 1) -> int:
 	if not picks_allowed():
 		return -1
-	return GameState.tools.cycle()
+	return GameState.tools.cycle(direction)
 
 
 ## Takes uses off the instance `held` (all of them if `all`); when none are left it is gone, with a
@@ -1606,6 +1610,7 @@ func _build_timer_and_exit() -> void:
 		warning_fx.setup(config["scene_timer"]["shadow"])
 		roar_player = AudioStreamPlayer.new()
 		roar_player.name = "Roar"
+		roar_player.bus = Settings.BUS_SFX
 		add_child(roar_player)
 	if exit_enabled and config.has("ending"):
 		ending_hud = EndingHud.new()
@@ -1669,19 +1674,27 @@ func _gift_spawned(walker) -> void:
 func _tick_gifts(delta: float) -> void:
 	var ctx := {"target": _flat_of(player), "inventory": GameState.inventory.items()}
 	var fx: Dictionary = config["gifts"]["fx"]
+	for job in gifts.jobs:
+		if job["state"] == Gifts.ASKING and job["walker"] != null:
+			_label_waiting_duck(job["walker"], fx)
 	for event in gifts.tick(delta, ctx):
 		match String(event["event"]):
 			"effects":
 				_play_gift_effects(event["job"], event["effects"])
 			"ask":  # a duck holds its gift: its name shows what to press
-				var duck = event["job"]["walker"]
-				if animal_nodes.has(duck):
-					animal_nodes[duck].label.text = "%s [%s]" % [String(duck.kind["name_ko"]), String(fx["space_text"])]
+				_label_waiting_duck(event["job"]["walker"], fx)
 			"thanks":
 				var thanked = event["job"]["walker"]
 				if animal_nodes.has(thanked):
 					animal_nodes[thanked].label.text = String(thanked.kind["name_ko"])
 				_say(String(fx["thanks_text"]))
+
+
+## A duck that holds its gift shows its name and the key or button that thanks it; the prompt
+## follows the device used last, so it is drawn again every tick while the duck waits.
+func _label_waiting_duck(duck, fx: Dictionary) -> void:
+	if animal_nodes.has(duck):
+		animal_nodes[duck].label.text = "%s [%s]" % [String(duck.kind["name_ko"]), InputPrompts.fill(String(fx["space_text"]))]
 
 
 func _play_gift_effects(job: Dictionary, effects: Array) -> void:
@@ -1852,7 +1865,7 @@ func debug_complete_need() -> String:
 
 # ---- Menus (the foraging scene's, with the same keys) ----
 
-## Esc: opens the pause menu and pauses the map. False while the backpack is open or the
+## The `pause` action (Esc, Options): opens the pause menu and pauses the map. False while the backpack is open or the
 ## menu is open already.
 func open_pause_menu() -> bool:
 	if backpack.is_open or restarting or spelling_hud.is_open() or hint_hud.is_open() or discovery_hud.word_select.is_open() or not pause_menu.open(true):
