@@ -11,7 +11,7 @@ const NOTE_WRITERS_PATH := "res://data/series/note_writers.json"
 const NOTEBOOK_PATH := "res://data/series/notebook.json"
 ## The animal classes a tool can target (animals.kinds[].class).
 const TOOL_CLASSES: Array[String] = ["ground", "small", "flyer", "water"]
-const ITEM_KINDS: Array[String] = ["elixir", "charm", "hint", "note", "currency", "plant", "notebook", "tool"]
+const ITEM_KINDS: Array[String] = ["elixir", "charm", "hint", "note", "currency", "plant", "notebook", "tool", "trophy", "souvenir", "junk"]
 
 var curriculum: Dictionary = {}
 var rules: Dictionary = {}

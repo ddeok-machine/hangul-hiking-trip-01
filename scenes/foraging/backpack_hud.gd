@@ -686,11 +686,13 @@ func _update_book(items: Array) -> void:
 	_book_shown_text = text
 	if style.is_empty() or not _book_config.get("styles", {}).has(String(style["style"])):
 		_book_text.text = text
+		_book_text.visible = true
 		_book_hand.visible = false
 		_book_hand.text = ""
 	else:  # a note whose last lines are handwritten (or otherwise styled): the plain lines, then the styled ones
 		var parts: Array[String] = BookLogic.split_at_line(text, int(style["from_line"]))
 		_book_text.text = parts[0]
+		_book_text.visible = parts[0] != ""
 		_style_hand(_book_config["styles"][String(style["style"])])
 		_book_hand.text = parts[1]
 		_book_hand.visible = parts[1] != ""

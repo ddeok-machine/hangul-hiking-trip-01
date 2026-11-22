@@ -3,9 +3,10 @@ extends Control
 ## art later. "baekseolgi": a plain steamed white rice cake (백설기), a soft white
 ## rounded square with faint grey shading and a few tiny pores. The nine tools
 ## (Prompt 9c) are simple line drawings: eomuk_kkochi, jipge, hyojason, jamjarichae,
-## tteulchae, usan, selcabong, deungsan_stick, gomu_janggap.
+## tteulchae, usan, selcabong, deungsan_stick, gomu_janggap. Prompt 9f adds goranee_fang, deer_antler,
+## noru_antler, snake_skin and empty_bottle.
 
-const KNOWN: Array[String] = ["baekseolgi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap"]
+const KNOWN: Array[String] = ["baekseolgi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap", "goranee_fang", "deer_antler", "noru_antler", "snake_skin", "empty_bottle"]
 
 var icon_id := ""
 
@@ -133,3 +134,46 @@ func _draw_gomu_janggap() -> void:
 	for i in 4:
 		draw_rect(Rect2(_p(0.3 + i * 0.1, 0.12 + (0.04 if i == 0 or i == 3 else 0.0)), _p(0.08, 0.42)), yellow)
 	draw_rect(Rect2(_p(0.06, 0.4), _p(0.08, 0.3)), yellow)
+
+## ---- Prompt 9f: trophies, a souvenir, a skin and junk ----
+
+func _draw_goranee_fang() -> void:
+	var bone := Color(0.95, 0.93, 0.85)
+	draw_colored_polygon(PackedVector2Array([_p(0.38, 0.1), _p(0.62, 0.1), _p(0.54, 0.6), _p(0.5, 0.92), _p(0.46, 0.6)]), bone)
+	_line(Vector2(0.44, 0.14), Vector2(0.5, 0.8), Color(0.8, 0.77, 0.68), 0.02)
+
+
+func _draw_deer_antler() -> void:
+	var horn := Color(0.62, 0.45, 0.28)
+	_line(Vector2(0.5, 0.95), Vector2(0.5, 0.45), horn, 0.07)
+	_line(Vector2(0.5, 0.6), Vector2(0.25, 0.3), horn, 0.06)
+	_line(Vector2(0.25, 0.3), Vector2(0.2, 0.08), horn, 0.05)
+	_line(Vector2(0.5, 0.45), Vector2(0.75, 0.18), horn, 0.06)
+	_line(Vector2(0.62, 0.32), Vector2(0.86, 0.34), horn, 0.045)
+	_line(Vector2(0.38, 0.45), Vector2(0.16, 0.5), horn, 0.045)
+
+
+func _draw_noru_antler() -> void:
+	var horn := Color(0.7, 0.58, 0.4)
+	_line(Vector2(0.4, 0.92), Vector2(0.45, 0.4), horn, 0.09)
+	_line(Vector2(0.45, 0.4), Vector2(0.62, 0.1), horn, 0.07)
+	_line(Vector2(0.44, 0.5), Vector2(0.24, 0.3), horn, 0.055)
+	_dot(Vector2(0.4, 0.92), 0.07, Color(0.55, 0.45, 0.32))
+
+
+func _draw_snake_skin() -> void:
+	var skin := Color(0.82, 0.86, 0.7, 0.9)
+	var points := PackedVector2Array()
+	for i in 12:
+		var t := float(i) / 11.0
+		points.append(_p(0.12 + 0.76 * t, 0.5 + 0.22 * sin(t * TAU * 1.2)))
+	draw_polyline(points, skin, maxf(2.0, 0.16 * minf(size.x, size.y)))
+	draw_polyline(points, Color(0.55, 0.62, 0.45), maxf(1.0, 0.03 * minf(size.x, size.y)))
+
+
+func _draw_empty_bottle() -> void:
+	var glass := Color(0.35, 0.62, 0.4, 0.85)
+	draw_rect(Rect2(_p(0.4, 0.06), _p(0.2, 0.28)), glass)
+	draw_colored_polygon(PackedVector2Array([_p(0.4, 0.32), _p(0.6, 0.32), _p(0.78, 0.5), _p(0.78, 0.94), _p(0.22, 0.94), _p(0.22, 0.5)]), glass)
+	draw_rect(Rect2(_p(0.22, 0.58), _p(0.56, 0.18)), Color(0.95, 0.95, 0.9))
+	draw_rect(Rect2(_p(0.38, 0.03), _p(0.24, 0.05)), Color(0.8, 0.8, 0.8))

@@ -58,6 +58,8 @@ const WarningFx := preload("res://scenes/animals/warning_fx.gd")
 const Cairn := preload("res://scenes/animals/cairn.gd")
 const ExitFlow := preload("res://scenes/animals/exit_flow.gd")
 const EndingHud := preload("res://scenes/foraging/ending_hud.gd")
+const Gifts := preload("res://scenes/animals/gifts.gd")
+const GiftFx := preload("res://scenes/animals/gift_fx.gd")
 const FONT := preload("res://art/fonts/NotoSansKR-VariableFont_wght.ttf")
 
 ## A bare-hand grab hurts (and is made by) the traveler being controlled: Fernanda until she is
@@ -73,6 +75,7 @@ const SALT_TOOL_REWARDS := 7   # the tool a met need drops
 const SALT_PREDATORS := 8      # hunts, attacks and their damage rolls (Prompt 9d)
 const SALT_TIMER := 9          # the hidden scene timer's duration and shadow edge (Prompt 9e)
 const SALT_EXIT := 10          # the exit note's landing spot and turn (Prompt 9e)
+const SALT_GIFTS := 11         # the roe deer's sex and the weasel's pick (Prompt 9f)
 
 const GROUND_STEP := 1.0   # metres between ground mesh vertices along x
 
@@ -94,6 +97,10 @@ static var predators_enabled := true
 static var timer_enabled := true
 ## False: no cairn, no wall before it and no exit (the older sections walk to every edge).
 static var exit_enabled := true
+## Set by tests (default on): the animals' gifts and the 도감 pages and trophies (Prompt 9f).
+static var gifts_enabled := true
+## Set by tests: acts as the --debug-kit user argument (the dev test kit and F9).
+static var debug_kit_override := false
 
 var config: Dictionary = {}
 var stage_width := 0.0
@@ -173,6 +180,12 @@ var cairn_node: Node3D
 var exit_flow
 var ending_hud: CanvasLayer
 var needs_finished := false
+## Prompt 9f: the gift logic, the pickups a gift put on the map (pile index -> {"job"}) and
+## whether the dev kit (--debug-kit) is on.
+var gifts
+var pickup_gift: Dictionary = {}
+var debug_kit := false
+var _gift_says := 0
 ## Who the bear still has to hunt after the one it is on (the scene timer's two bears).
 var bear_queue: Array[String] = []
 var tool_rng := RandomNumberGenerator.new()
@@ -235,6 +248,8 @@ func _ready() -> void:
 	camera.size = float(cam["size"])
 	camera.rotation_degrees = Vector3(-float(cam["pitch_deg"]), 0.0, 0.0)
 	$WorldEnvironment.environment.background_color = _color(config["backdrop_color"])
+	debug_kit = debug_kit_on()
+	_give_debug_kit()  # before the scene-start snapshot, so a restart keeps it
 	GameState.begin_scene(String(config["begin_id"]))  # a pending bank for this scene is applied here
 	_give_start_tools()
 	_choose_seed()  # the ground and the props are seeded too
@@ -282,6 +297,7 @@ func _ready() -> void:
 	add_child(bear)
 	bear.setup(config["bear"], view_rect, terrain.height_at, float(cam["pitch_deg"]))
 	_build_timer_and_exit()
+	_build_gifts()
 	_sync_downed()  # the hearts may already hold a downed traveler (a pending bank)
 	update_camera(0.0, true)
 
@@ -312,6 +328,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("tool_next"):
 		cycle_tool()
+		get_viewport().set_input_as_handled()
+	elif debug_kit and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
+		debug_complete_need()
 		get_viewport().set_input_as_handled()
 
 
@@ -394,8 +413,12 @@ func _tick_animals(delta: float) -> void:
 	for event in crossing.tick(delta):
 		if event["event"] == Crossing.SPAWN:
 			_add_animal(event["walker"])
+			if gifts != null:
+				_gift_spawned(event["walker"])
 		else:
 			_remove_animal(event["walker"])
+	if gifts != null:
+		_tick_gifts(delta)
 	if predators_enabled:
 		_tick_predators(delta)
 	for walker in animal_nodes:
@@ -763,6 +786,7 @@ func _on_word_completed(id: String) -> void:
 	var last: bool = needs.mark_done(id)
 	if needs.done.size() > met_before:
 		_reward_need(id)
+		_gift_need(id)
 	discovery_hud.set_header(needs.counter_text())
 	if last:
 		complete_hud.visible = true
@@ -903,6 +927,8 @@ func pick_nearest() -> bool:
 		return false
 	if press_revive() != "none":  # a downed traveler in range comes first
 		return true
+	if gifts != null and gifts.press_space(_flat_of(player)):  # a duck waiting for its "thank you" (Prompt 9f)
+		return true
 	if exit_flow != null and picking.nearest_target(_flat_of(player))["type"] == "note":
 		return exit_flow.pick_note()  # the exit note (Prompt 9e), as in foraging
 	if not equipped_tool_def().is_empty():  # a tool in hand: a pickup under it first, else the tool grab
@@ -979,6 +1005,11 @@ func collect_pickup(index: int) -> Dictionary:
 	else:
 		GameState.inventory.add(item_id)
 	FloatLabel.make(self, "+1 %s" % String(Content.item(item_id)["name_ko"]), node.global_position + Vector3(0.0, float_label_height - 1.0, 0.0), float_label_config)
+	if pickup_gift.has(index):  # the dog's bait: taking it starts that dog's attack at once
+		var link: Dictionary = pickup_gift[index]
+		pickup_gift.erase(index)
+		if gifts != null and gifts.pickup_taken(int(link["job"])):
+			_gift_attack(gifts.job_by_id(int(link["job"])))
 	return {"item": item_id}
 
 
@@ -1586,6 +1617,237 @@ func _build_timer_and_exit() -> void:
 	needs_complete.connect(_on_needs_complete)
 	for t in travelers.values():
 		t.bounds = open_bounds()
+
+
+# ---- Gifts, 도감 pages and trophies (Prompt 9f) ----
+
+func _build_gifts() -> void:
+	if gifts_enabled and config.has("gifts"):
+		gifts = Gifts.new(config["gifts"], crossing, DecoyPlacement.derive_seed(crossing_seed, SALT_GIFTS))
+
+
+func _tier_of(kind_id: String) -> String:
+	for kind in config["kinds"]:
+		if kind["id"] == kind_id:
+			return String(kind["tier"])
+	return ""
+
+
+## A floating line over the controlled traveler, each one a little higher than the last.
+func _say(text: String) -> void:
+	var at: Vector3 = player.global_position + Vector3(0.0, float_label_height + 0.5 * (_gift_says % 4), 0.0)
+	_gift_says += 1
+	FloatLabel.make(self, text, at, float_label_config)
+
+
+## A need was met: the 도감 page and trophy of its kind (once each; only a held one is a repeat) go
+## into the backpack, and the kind's gift is sent: an animal of the kind on screen delivers now,
+## else the next one of the kind to spawn.
+func _gift_need(id: String) -> void:
+	if gifts == null:
+		return
+	var kind_id := String(needs.entry_of(id)["from_kind"])
+	var tier := _tier_of(kind_id)
+	var found: Dictionary = Gifts.collection(config["dogam"], kind_id, tier, GameState.inventory)
+	if found["page"] != "" and GameState.inventory.add(String(found["page"])):
+		_say(String(config["dogam"]["page_text"]))
+	if found["trophy"] != "" and GameState.inventory.add(String(found["trophy"])):
+		_say("+1 %s" % String(Content.item(String(found["trophy"]))["name_ko"]))
+	var job: Dictionary = gifts.request(kind_id, tier)
+	if not job.is_empty():
+		gifts.bind_on_screen(job, view_rect(), _flat_of(player))
+
+
+## A new animal: a roe deer rolls its sex (a male wears small antlers), and a waiting gift may take it.
+func _gift_spawned(walker) -> void:
+	gifts.on_spawn(walker)
+	if gifts.sex_of(walker) == "male" and animal_nodes.has(walker):
+		var size: Array = walker.kind["size"]
+		GiftFx.antlers_on(animal_nodes[walker], Vector3(float(size[0]), float(size[1]), float(size[2])), GiftFx.color_of(config["gifts"]["fx"]["antler_color"]))
+
+
+func _tick_gifts(delta: float) -> void:
+	var ctx := {"target": _flat_of(player), "inventory": GameState.inventory.items()}
+	var fx: Dictionary = config["gifts"]["fx"]
+	for event in gifts.tick(delta, ctx):
+		match String(event["event"]):
+			"effects":
+				_play_gift_effects(event["job"], event["effects"])
+			"ask":  # a duck holds its gift: its name shows what to press
+				var duck = event["job"]["walker"]
+				if animal_nodes.has(duck):
+					animal_nodes[duck].label.text = "%s [%s]" % [String(duck.kind["name_ko"]), String(fx["space_text"])]
+			"thanks":
+				var thanked = event["job"]["walker"]
+				if animal_nodes.has(thanked):
+					animal_nodes[thanked].label.text = String(thanked.kind["name_ko"])
+				_say(String(fx["thanks_text"]))
+
+
+func _play_gift_effects(job: Dictionary, effects: Array) -> void:
+	for effect in effects:
+		match String(effect["type"]):
+			"fx":
+				_gift_fx(String(effect["name"]), job, String(effect["to"]))
+			"give":
+				_gift_give(String(effect["item"]), int(effect["count"]))
+			"pickup":
+				_gift_pickup(job, effect)
+			"take":
+				GameState.inventory.remove(String(effect["item"]))
+				_say("-1 %s" % String(Content.item(String(effect["item"]))["name_ko"]))
+			"return":
+				GameState.inventory.add(String(effect["item"]))
+				_say("+1 %s" % String(Content.item(String(effect["item"]))["name_ko"]))
+
+
+## Items from a gift: a tool goes on the belt with all its uses, anything else into the backpack.
+func _gift_give(item_id: String, count: int) -> void:
+	var is_tool := String(Content.item(item_id).get("kind", "")) == "tool"
+	for n in count:
+		if is_tool:
+			GameState.tools.add(item_id)
+		else:
+			GameState.inventory.add(item_id)
+	_say("+%d %s" % [count, String(Content.item(item_id)["name_ko"])] if count > 1 else "+1 %s" % String(Content.item(item_id)["name_ko"]))
+
+
+func _traveler_of(to: String) -> Node3D:
+	return player if to == "controlled" or not travelers.has(to) else travelers[to]
+
+
+## The placeholder look of a gift's act.
+func _gift_fx(name_fx: String, job: Dictionary, to: String) -> void:
+	var fx: Dictionary = config["gifts"]["fx"]
+	var walker = job["walker"]
+	var target: Node3D = _traveler_of(to)
+	var ground: Vector3 = target.global_position
+	match name_fx:
+		"spit":  # the skewer flies onto Nestor's forehead and stays there for the scene
+			var from := Vector3(walker.held_pos.x, terrain.height_at(walker.held_pos.x) + 0.6, walker.held_pos.y)
+			var head: Vector3 = ground + Vector3(0.0, Traveler.HEIGHT * 0.86, -Traveler.RADIUS)
+			var size := Vector3(0.04, 0.04, 0.5)
+			var color := GiftFx.color_of(fx["skewer_color"])
+			GiftFx.shot(self, from, head, float(fx["spit_s"]), size, color)
+			GiftFx.skewer_on(target, color, float(fx["spit_s"]))
+		"antler_drop":  # on Fernanda's foot: a thunk, no damage
+			var foot := ground + Vector3(0.1, 0.0, -0.2)
+			GiftFx.fall(self, foot, 2.5, float(fx["fall_s"]), Vector3(0.1, 0.35, 0.1), GiftFx.color_of(fx["antler_color"]),
+					func() -> void: FloatLabel.make(self, String(fx["thunk_text"]), foot + Vector3(0.0, 0.6, 0.0), float_label_config))
+		"head_drop":  # on the traveler's head
+			var top := ground + Vector3(0.0, Traveler.HEIGHT, 0.0)
+			GiftFx.fall(self, top, 3.0, float(fx["fall_s"]), Vector3(0.12, 0.3, 0.08), GiftFx.color_of(fx["tool_color"]),
+					func() -> void: FloatLabel.make(self, String(fx["thunk_text"]), top + Vector3(0.0, 0.4, 0.0), float_label_config))
+		"spear":  # a pole from high above, 1 m beside Fernanda
+			var spot := ground + Vector3(1.0, 0.0, 0.0)
+			GiftFx.fall(self, spot, 9.0, float(fx["fall_s"]) + 0.2, Vector3(0.06, 0.7, 0.06), GiftFx.color_of(fx["pole_color"]))
+		"bow":
+			if animal_nodes.has(walker):
+				GiftFx.bow(animal_nodes[walker], float(fx["bow_s"]))
+		"wrap":
+			GiftFx.wrap_arm(target, float(fx["wrap_s"]), GiftFx.color_of(fx["wrap_color"]))
+		"stare":
+			FloatLabel.make(self, String(fx["stare_text"]), Vector3(walker.held_pos.x, terrain.height_at(walker.held_pos.x) + float(walker.kind["size"][1]) + 0.6, walker.held_pos.y), float_label_config)
+		"dig":
+			if animal_nodes.has(walker):
+				GiftFx.bow(animal_nodes[walker], 1.4)
+		"mound":
+			GiftFx.mound_at(self, Vector3(walker.held_pos.x, terrain.height_at(walker.held_pos.x), walker.held_pos.y), float(fx["mound_radius"]), GiftFx.color_of(fx["mound_color"]))
+
+
+## Where the `index`th pickup of a gift lies for a `place` rule, kept inside the walkable ground.
+func gift_spot(job: Dictionary, place: String, index: int) -> Vector2:
+	var walker = job["walker"]
+	var here: Vector2 = walker.held_pos if walker.held else walker.position()
+	var spread := float(config["gifts"]["pickup_spread_m"])
+	var spot := here
+	match place:
+		"behind":  # 2 m behind the animal (the way it faces), a second one beside the first
+			var heading: Vector2 = walker.held_heading if walker.held else walker.heading()
+			spot = here - heading * 2.0 + Vector2(-heading.y, heading.x) * spread * float(index)
+		"beside_fernanda":  # 1 m to her right, the second to her left
+			spot = _flat_of(travelers["fernanda"]) + Vector2(1.0 if index % 2 == 0 else -1.0, 0.0) * (1.0 + floorf(index / 2.0) * spread)
+		"scatter":  # round the mound
+			var angle := 0.6 + TAU * float(index) / 6.0
+			spot = here + Vector2(cos(angle), sin(angle)) * 0.9
+		"drop":  # a metre in front of the animal, toward the traveler
+			var toward := _flat_of(player) - here
+			spot = here + (toward.normalized() if toward.length() > 0.001 else Vector2(0.0, 1.0)) * 1.0
+	var box := open_bounds().grow(-0.3)
+	spot = Vector2(clampf(spot.x, box.position.x, box.end.x), clampf(spot.y, box.position.y, box.end.y))
+	return crossing.keep_out_lake(spot)
+
+
+## A pickup a gift put on the map: a node and a pile of the basket's picking, like a bottle or a tool.
+func _gift_pickup(job: Dictionary, effect: Dictionary) -> int:
+	var item_id := String(effect["item"])
+	var def: Dictionary = Content.item(item_id)
+	var spot := gift_spot(job, String(effect["place"]), int(effect["index"]))
+	var node: Node3D
+	if String(def.get("kind", "")) == "tool":
+		node = ToolPickup.new()
+		node.setup(def, config["tool_pickups"]["look"], float(pickup_nodes.size()) * 1.7)
+	else:
+		node = HealPickup.new()
+		node.setup(def, config["heal_pickups"]["look"], float(pickup_nodes.size()) * 1.7)
+	add_child(node)
+	node.global_position = Vector3(spot.x, terrain.height_at(spot.x), spot.y)
+	var index: int = picking.add_pile(spot, 1)
+	pickup_items[index] = item_id
+	pickup_nodes[index] = node
+	if bool(effect["attack"]):
+		pickup_gift[index] = {"job": int(effect["job"])}
+	return index
+
+
+## The dog's pickup was taken: the dog telegraphs an attack on the controlled traveler now.
+func _gift_attack(job: Dictionary) -> void:
+	var walker = job["walker"]
+	var events: Array[Dictionary] = []
+	predators.begin_attack(walker, GameState.controlled, _flat_of(player), false, events)
+
+
+# ---- The dev test kit (--debug-kit, Prompt 9f) ----
+
+## True with the --debug-kit user argument (or the test override).
+func debug_kit_on() -> bool:
+	return debug_kit_override or OS.get_cmdline_user_args().has("--debug-kit") or OS.get_cmdline_args().has("--debug-kit")
+
+
+## The kit (animals.debug_kit) goes into the backpack and onto the belt, once per hike.
+func _give_debug_kit() -> void:
+	if not debug_kit or not config.has("debug_kit") or GameState.kits_given.has("debug_kit"):
+		return
+	GameState.kits_given["debug_kit"] = true
+	for entry in config["debug_kit"]["items"]:
+		GameState.inventory.add(String(entry["item"]), int(entry["count"]))
+	for tool_id in config["debug_kit"]["tools"]:
+		GameState.tools.add(String(tool_id))
+
+
+## F9 (only with the kit): finishes the oldest discovered need that is not done, discovering
+## one first if the list is empty. Returns its id ("" if nothing was done).
+func debug_complete_need() -> String:
+	if not debug_kit or restarting or exit_blocked() or needs.done.size() >= needs.total:
+		return ""
+	var target := ""
+	for entry in needs.entries:
+		if not spelling.is_done(String(entry["id"])):
+			target = String(entry["id"])
+			break
+	if target == "":
+		for kind in config["kinds"]:
+			var entry: Dictionary = needs.discover(String(kind["id"]))
+			if not entry.is_empty():
+				target = String(entry["id"])
+				spelling.add_word(target, String(entry["name_ko"]), String(entry["hover_name"]))
+				discovery_hud.refresh()
+				need_discovered.emit(target)
+				break
+	if target == "":
+		return ""
+	spelling.complete_word(target)
+	return target
 
 
 # ---- Menus (the foraging scene's, with the same keys) ----

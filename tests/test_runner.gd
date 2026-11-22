@@ -173,11 +173,14 @@ const EXPECTED_SECTIONS: Array[String] = [
 	"test_exit9e_logic",
 	"test_exit9e_scene",
 	"test_exit9e_placeholder",
+	"test_gifts9f_data",
+	"test_gifts9f_logic",
+	"test_gifts9f_scene",
 ]
 
 ## The run fails if fewer checks than this ran. After adding tests, raise it to
 ## the printed total minus a small margin (currently 6).
-const MIN_CHECKS := 4546
+const MIN_CHECKS := 4689
 
 
 func check(condition: bool, label: String) -> void:
@@ -202,6 +205,7 @@ func _ready() -> void:
 	AnimalsScript.predators_enabled = false  # nor predators hunting and attacking; the 9d section turns them on
 	AnimalsScript.timer_enabled = false  # nor the hidden scene timer's bear; the 9e section turns it on
 	AnimalsScript.exit_enabled = false  # nor a cairn and a wall before it; the 9e section turns them on
+	AnimalsScript.gifts_enabled = false  # nor the animals' gifts and pages; the 9f section turns them on
 	print("== Hangul engine ==")
 	test_compose()
 	print("== Curriculum ==")
@@ -407,6 +411,10 @@ func _ready() -> void:
 	test_exit9e_logic()
 	await test_exit9e_scene()
 	await test_exit9e_placeholder()
+	print("== Gifts, 도감 pages, trophies, more bottles, the dev kit (Prompt 9f) ==")
+	test_gifts9f_data()
+	test_gifts9f_logic()
+	await test_gifts9f_scene()
 	for section in EXPECTED_SECTIONS:
 		if not finished.has(section):
 			check(false, "section did not run to its end: " + section)
@@ -5351,14 +5359,14 @@ const KO_FONT_FILE := "NotoSansKR-VariableFont_wght.ttf"
 
 func test_items_data() -> void:
 	var file: Array = Content.load_json(Content.ITEMS_PATH).get("items", [])
-	check(file.size() == 21 and Content.items.size() == 23, "items.json lists twenty-one items (the nine tools of Prompt 9c among them) and all of them loaded, plus the two notes registered from data/notes")
-	check(Content.items.keys() == ["ssanghwatang", "gongjindan", "spelling_hint", "slow_time_charm", "ddeok", "plant_ma", "plant_meoru", "plant_minari", "plant_gosari", "plant_gobi", "plant_siromi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap", "sucheop", "hallasan_exit_sumin", "hallasan_exit_2"], "the ids load in file order, the registered notes after them")
+	check(file.size() == 26 and Content.items.size() == 33, "items.json lists twenty-six items (the nine tools of Prompt 9c and the five of Prompt 9f among them) and all of them loaded, plus the seven notes registered from data/notes")
+	check(Content.items.keys() == ["ssanghwatang", "gongjindan", "spelling_hint", "slow_time_charm", "ddeok", "plant_ma", "plant_meoru", "plant_minari", "plant_gosari", "plant_gobi", "plant_siromi", "eomuk_kkochi", "jipge", "hyojason", "jamjarichae", "tteulchae", "usan", "selcabong", "deungsan_stick", "gomu_janggap", "goranee_fang", "deer_antler", "noru_antler", "snake_skin", "empty_bottle", "sucheop", "dogam_noru", "dogam_bibaribaem", "dogam_geomdokseuri", "dogam_goraeni", "dogam_saseum", "hallasan_exit_sumin", "hallasan_exit_2"], "the ids load in file order, the registered notes after them")
 	for id in Content.items:
 		var item: Dictionary = Content.item(id)
 		check(item["id"] == id and Content.ITEM_KINDS.has(item["kind"]), "%s has its id and a valid kind" % id)
 		check(item["name_en"] is String and item["name_en"] != "" and item["description_en"] is String and (item["description_en"] != "" or item["kind"] == "note"), "%s has an English name and description (a note has no description: it never has a row)" % id)
 		check(item["name_ko"] is String, "%s has a name_ko (possibly empty)" % id)
-	check(Content.ITEM_KINDS == ["elixir", "charm", "hint", "note", "currency", "plant", "notebook", "tool"], "the kinds are elixir, charm, hint, note, currency, plant, notebook and tool")
+	check(Content.ITEM_KINDS == ["elixir", "charm", "hint", "note", "currency", "plant", "notebook", "tool", "trophy", "souvenir", "junk"], "the kinds are elixir, charm, hint, note, currency, plant, notebook, tool, trophy, souvenir and junk")
 	var a: Dictionary = Content.item("ssanghwatang")
 	check(a["kind"] == "elixir" and a["name_ko"] == "쌍화탕" and a["name_en"] == "Ssanghwatang" and a["description_en"] == "Herbal tonic. Restores half a heart." and a["heal_units"] == 1, "ssanghwatang is as briefed")
 	var b: Dictionary = Content.item("gongjindan")
@@ -9153,7 +9161,7 @@ func test_debug_notes() -> void:
 	Foraging.debug_notes_override = true
 	map = await _kit_map(false)
 	var viewport := map.get_viewport()
-	check(GameState.inventory.snapshot() == {"sucheop": 1, "hallasan_exit_sumin": 1, "hallasan_exit_2": 1}, "with --debug-notes both exit notes are in the backpack at scene start")
+	check(GameState.inventory.snapshot() == {"sucheop": 1, "dogam_noru": 1, "dogam_bibaribaem": 1, "dogam_geomdokseuri": 1, "dogam_goraeni": 1, "dogam_saseum": 1, "hallasan_exit_sumin": 1, "hallasan_exit_2": 1}, "with --debug-notes every note (the five 도감 pages and both exit notes) is in the backpack at scene start")
 	_tap(viewport, KEY_Q)
 	await _settle_layout()
 	check(map.backpack_hud.notebook_text() == String(Content.notes["hallasan_exit_2"]["text"]), "Q shows the newest note (Exit Note 2), word for word")
@@ -12210,7 +12218,7 @@ func test_animals9bii_logic() -> void:
 	for id in cfg["start"]:
 		starts.append(Vector2(float(cfg["start"][id][0]), float(cfg["start"][id][1])))
 	var heal: Dictionary = cfg["heal_pickups"]
-	check(int(heal["count_min"]) == 2 and int(heal["count_max"]) == 4 and is_equal_approx(float(heal["weights"]["ssanghwatang"]), 4.0) and is_equal_approx(float(heal["weights"]["gongjindan"]), 1.0) and float(heal["min_spacing_m"]) >= 2.0 and Content.has_item("ssanghwatang") and Content.has_item("gongjindan"), "heal_pickups: 2..4 bottles, 쌍화탕 4 : 공진단 1, at least 2 m apart, both items exist")
+	check(int(heal["count_min"]) == 6 and int(heal["count_max"]) == 9 and is_equal_approx(float(heal["weights"]["ssanghwatang"]), 4.0) and is_equal_approx(float(heal["weights"]["gongjindan"]), 1.0) and float(heal["min_spacing_m"]) >= 2.0 and Content.has_item("ssanghwatang") and Content.has_item("gongjindan"), "heal_pickups: 6..9 bottles, 쌍화탕 4 : 공진단 1, at least 2 m apart, both items exist")
 	var counts_seen := {}
 	var spaced := true
 	var dry := true
@@ -12238,7 +12246,7 @@ func test_animals9bii_logic() -> void:
 				spaced = spaced and spot.distance_to(start) >= float(heal["min_spacing_m"])
 			for j in range(i + 1, placed.size()):
 				spaced = spaced and spot.distance_to(placed[j]["spot"]) >= float(heal["min_spacing_m"])
-	check(counts_seen.keys().size() == 3 and counts_seen.has(2) and counts_seen.has(3) and counts_seen.has(4), "seeds 1-30 lay 2, 3 or 4 bottles, and all three counts come up")
+	check(counts_seen.keys().size() == 4 and counts_seen.has(6) and counts_seen.has(7) and counts_seen.has(8) and counts_seen.has(9), "seeds 1-30 lay 6 to 9 bottles, and all four counts come up")
 	check(spaced and dry and inside and known_items, "every bottle is on walkable ground in the map, not in the lake, 2 m from the travelers' starts and from every other bottle")
 	check(seeded and first_spots[0] != first_spots[1] and first_spots[1] != first_spots[2], "the places are seeded: the same seed lays the same bottles, other seeds other ones")
 	check(float(tonic) / float(total) > 0.6 and float(tonic) / float(total) < 0.95, "about four in five bottles are 쌍화탕 (%d of %d)" % [tonic, total])
@@ -12254,7 +12262,7 @@ func test_animals9bii_scene() -> void:
 	var map: Node3D = await _animals_map(31)
 	# 7. The bottles.
 	var count: int = map.pickup_nodes.size()
-	check(count >= 2 and count <= 4 and map.picking.pile_count() == count and map.get_node("Pickups").get_child_count() == count, "the scene lays 2-4 bottles (%d), each a pile of the basket's picking" % count)
+	check(count >= 6 and count <= 9 and map.picking.pile_count() == count and map.get_node("Pickups").get_child_count() == count, "the scene lays 6-9 bottles (%d), each a pile of the basket's picking" % count)
 	var looks_ok := true
 	for index in map.pickup_nodes:
 		var node = map.pickup_nodes[index]
@@ -13127,7 +13135,7 @@ func test_tools9c_data() -> void:
 	var tools_in_file := 0
 	for entry in file:
 		tools_in_file += 1 if entry["kind"] == "tool" else 0
-	check(tools_in_file == 9 and Content.ITEM_KINDS.has("tool"), "items.json lists the nine tools, and tool is an item kind")
+	check(tools_in_file == 10 and Content.ITEM_KINDS.has("tool"), "items.json lists the ten tools (the snake skin of Prompt 9f among them), and tool is an item kind")
 	for id in TOOL_IDS:
 		var def: Dictionary = Content.item(id)
 		var spec: Array = TOOL_SPECS[id]
@@ -15833,3 +15841,666 @@ func test_exit9e_placeholder() -> void:
 	again.free()
 	_bare_hike()
 	_section_done("test_exit9e_placeholder")
+
+
+# ---------------------------------------------------------------------------------------------
+# Prompt 9f: more heal bottles, the animals' gifts, 도감 pages and trophies, the dev test kit
+# ---------------------------------------------------------------------------------------------
+
+const GiftsScript := preload("res://scenes/animals/gifts.gd")
+
+## The verbatim 도감 texts of the brief ("/" is a line break; the first line is the title).
+const DOGAM_TEXT := {
+	"dogam_noru": "노루 · Roe deer\nNearly wiped out on Jeju in the 1980s. Then there were too many.\nJeju called them pests and culled 7,032 between 2013 and 2019.\nEats 콩 and 고구마, preferably yours. Males drop their antlers in autumn.",
+	"dogam_bibaribaem": "비바리뱀 · Bibari snake\nIn Korea, found only on Jeju. Class I endangered.\nEats lizards. Extremely shy. Please do not step on it.",
+	"dogam_geomdokseuri": "검독수리 · Golden eagle\nClass I endangered. A nest was confirmed near Hallasan\nfor the first time in 77 years. Sees you before you see it.",
+	"dogam_goraeni": "고라니 · Water deer\nExtinct on Hallasan. Vulnerable worldwide.\nMales grow long fangs. It screams. You'd scream too.",
+	"dogam_saseum": "사슴 · Deer\nThe native deer is gone from Hallasan.\nDeer released in the 1990s now push out the 노루.\nNobody asked the 노루.",
+}
+
+
+func test_gifts9f_data() -> void:
+	var cfg := _animals_config()
+	var heal: Dictionary = cfg["heal_pickups"]
+	check(int(heal["count_min"]) == 6 and int(heal["count_max"]) == 9, "heal bottles: count 6..9")
+	var items_ok := true
+	for id in ["goranee_fang", "deer_antler", "noru_antler", "snake_skin", "empty_bottle"]:
+		items_ok = items_ok and Content.has_item(id)
+	check(items_ok, "the five new items exist")
+	var expected := {
+		"goranee_fang": ["trophy", "고라니 송곳니", "Water deer fang", "From an animal that isn't here. Still sharp."],
+		"deer_antler": ["trophy", "사슴뿔", "Deer antler", "Proof. Of something."],
+		"noru_antler": ["souvenir", "노루뿔", "Shed roe deer antler", "It landed on Fernanda's foot. Free."],
+		"snake_skin": ["tool", "비바리뱀 허물", "Snake skin", "Stretchy. Slightly warm. Don't think about it."],
+		"empty_bottle": ["junk", "빈 막걸리병", "Empty makgeolli bottle", "Someone had a good day."],
+	}
+	for id in expected:
+		var def: Dictionary = Content.item(id)
+		var want: Array = expected[id]
+		check(def.get("kind", "") == want[0] and def.get("name_ko", "") == want[1] and def.get("name_en", "") == want[2] and def.get("description_en", "") == want[3], "%s: kind, names and description as briefed" % id)
+		check(ItemIconScript.is_known(String(def.get("icon", ""))), "%s has an icon drawn in code" % id)
+	var skin: Dictionary = Content.item("snake_skin")
+	var glove: Dictionary = Content.item("gomu_janggap")
+	check(ToolUseScript.is_gloves(skin) and int(skin["uses"]) == 2 and is_equal_approx(float(skin["reach_m"]), float(glove["reach_m"])) and skin["targets"] == glove["targets"], "the snake skin acts like the rubber gloves, with 2 uses")
+	check(not BackpackScript.is_selectable("goranee_fang") and not BackpackScript.is_selectable("deer_antler") and not BackpackScript.is_selectable("noru_antler") and not BackpackScript.is_selectable("empty_bottle"), "trophies, the souvenir and junk are view-only")
+	check(Content.item_problem({"id": "x_trophy", "kind": "trophy"}, {}) == "" and Content.item_problem({"id": "x_junk", "kind": "junk"}, {}) == "" and Content.item_problem({"id": "x_souvenir", "kind": "souvenir"}, {}) == "", "trophy, souvenir and junk are item kinds")
+	# The gifts' data: every kind and item exists; the 멧돼지 has none.
+	var gifts: Dictionary = cfg["gifts"]
+	var ids: Array = []
+	for kind in cfg["kinds"]:
+		ids.append(kind["id"])
+	var refs_ok := true
+	var item_refs := 0
+	for kind_id in gifts["kinds"]:
+		refs_ok = refs_ok and ids.has(kind_id)
+		var plan: Dictionary = gifts["kinds"][kind_id]
+		var plans: Array = [plan]
+		if plan.has("male"):
+			plans = [plan["male"], plan["female"]]
+		for p in plans:
+			for step in p["steps"]:
+				for key in ["give", "pickup"]:
+					for item_id in step.get(key, []):
+						item_refs += 1
+						refs_ok = refs_ok and Content.has_item(String(item_id))
+	check(refs_ok and item_refs >= 12, "every gift names a kind and items that exist (%d item references)" % item_refs)
+	check(gifts["kinds"].size() == 10 and not gifts["kinds"].has("meotdwaeji"), "ten kinds give a gift; the 멧돼지 none (9g)")
+	check(int(gifts["times"]["common"]) == 1 and int(gifts["times"]["endangered"]) == 2 and int(gifts["times"]["extinct"]) == 2, "gift times: 1 common, 2 endangered, 2 extinct")
+	check(is_equal_approx(float(gifts["kinds"]["noru"]["male_chance"]), 0.5), "a roe deer is male half the time")
+	# The 도감 data.
+	var dogam: Dictionary = cfg["dogam"]
+	check(dogam["tiers"] == ["endangered", "extinct"] and dogam["pages"].size() == 5, "도감: endangered and extinct tiers, five pages")
+	var tiers_ok := true
+	for kind in cfg["kinds"]:
+		var listed: bool = dogam["pages"].has(kind["id"])
+		tiers_ok = tiers_ok and (listed == (kind["tier"] == "endangered" or kind["tier"] == "extinct"))
+	check(tiers_ok, "exactly the endangered and extinct kinds have a page")
+	var text_ok := true
+	var style_ok := true
+	for kind_id in dogam["pages"]:
+		var note_id := String(dogam["pages"][kind_id])
+		text_ok = text_ok and Content.notes.has(note_id) and String(Content.notes[note_id]["text"]) == String(DOGAM_TEXT[note_id])
+		style_ok = style_ok and Content.notes[note_id].get("style", "") == "field_guide" and int(Content.notes[note_id].get("styled_from_line", -1)) == 0
+	check(text_ok, "the five 도감 pages hold the briefed text, verbatim")
+	check(style_ok and Content.notebook["styles"].has("field_guide"), "...in the field_guide notebook style from the first line")
+	var trophy_ok: bool = dogam["trophies"].size() == 2 and dogam["trophies"]["goraeni"] == "goranee_fang" and dogam["trophies"]["saseum"] == "deer_antler"
+	for kind_id in dogam["trophies"]:
+		for kind in cfg["kinds"]:
+			if kind["id"] == kind_id:
+				trophy_ok = trophy_ok and kind["tier"] == "extinct"
+	check(trophy_ok, "only the two extinct kinds give a trophy: the fang and the antler")
+	var kit: Dictionary = cfg["debug_kit"]
+	check(kit["items"].size() == 1 and kit["items"][0]["item"] == "ssanghwatang" and int(kit["items"][0]["count"]) == 3 and kit["tools"] == ["jamjarichae", "tteulchae", "deungsan_stick"], "the dev kit: 3 쌍화탕, a 잠자리채, a 뜰채, a 등산스틱")
+	_section_done("test_gifts9f_data")
+
+
+## A crossing and a gift logic over it, nothing else (no nodes).
+func _gift_setup(seed_value := 7) -> Array:
+	var crossing = CrossingScript.new(_animals_config(), seed_value)
+	crossing.view = Rect2(-50.0, -50.0, 300.0, 200.0)
+	crossing._until_spawn = 1.0e9
+	return [crossing, GiftsScript.new(_animals_config()["gifts"], crossing, seed_value)]
+
+
+## A new animal of the kind (others met on the way are taken off again).
+func _walker_of(crossing, kind_id: String):
+	for i in 800:
+		var w = crossing.spawn()
+		if w == null:
+			for other in crossing.alive.duplicate():
+				crossing.remove(other)
+			continue
+		if String(w.kind["id"]) == kind_id:
+			return w
+		crossing.remove(w)
+	return null
+
+
+## Stands the animal at `spot` (a short route there), so it is on the map where we want it.
+func _gift_place(w, spot: Vector2) -> void:
+	var route: Array[Vector2] = [spot, spot + Vector2(0.5, 0.0)]
+	w.route = route
+	w.amplitude = 0.0
+	w.travelled = 0.0
+	w.stop_dist = -1.0
+	w.linger = 0.0
+	w.lingered = 0.0
+	w.land_at = -1.0
+	w.takeoff_at = -1.0
+	w.finalize()
+
+
+## Ticks the gifts for `seconds`; returns every event.
+func _gift_ticks(g, target: Vector2, seconds: float, inventory := []) -> Array:
+	var events: Array = []
+	for i in roundi(seconds / 0.05):
+		events.append_array(g.tick(0.05, {"target": target, "inventory": inventory}))
+	return events
+
+
+func _gift_effects(events: Array) -> Array:
+	var effects: Array = []
+	for event in events:
+		if event["event"] == "effects":
+			effects.append_array(event["effects"])
+	return effects
+
+
+func _effects_of_type(effects: Array, type: String) -> Array:
+	var found: Array = []
+	for effect in effects:
+		if effect["type"] == type:
+			found.append(effect)
+	return found
+
+
+## One kind's gift, played to its end by an animal on screen: the effects it made.
+func _gift_run(kind_id: String, tier: String, sex_wanted := "", inventory := []) -> Dictionary:
+	var made := _gift_setup()
+	var crossing = made[0]
+	var g = made[1]
+	var w = null
+	for i in 200:
+		w = _walker_of(crossing, kind_id)
+		g.on_spawn(w)  # rolls a roe deer's sex
+		if sex_wanted == "" or g.sex_of(w) == sex_wanted:
+			break
+		crossing.remove(w)
+	_gift_place(w, Vector2(44.0, 14.0))
+	var job: Dictionary = g.request(kind_id, tier)
+	var bound: bool = g.bind_on_screen(job, crossing.view, Vector2(30.0, 10.0))
+	var events := _gift_ticks(g, Vector2(30.0, 10.0), 14.0, inventory)
+	return {"g": g, "crossing": crossing, "walker": w, "job": job, "bound": bound, "events": events, "effects": _gift_effects(events)}
+
+
+func test_gifts9f_logic() -> void:
+	# ---- Delivered now by an animal on screen, or by the next one to spawn ----
+	var made := _gift_setup()
+	var crossing = made[0]
+	var g = made[1]
+	var first = _walker_of(crossing, "goraeni")
+	_gift_place(first, Vector2(44.0, 14.0))
+	var job: Dictionary = g.request("goraeni", "extinct")
+	check(job["state"] == GiftsScript.WAITING and not first.held, "a new job waits until an animal takes it")
+	check(g.bind_on_screen(job, crossing.view, Vector2(30.0, 10.0)) and job["state"] == GiftsScript.WALKING and first.held and job["walker"] == first, "an animal of the kind on screen takes it now")
+	check(not g.bind_on_screen(g.request("goraeni", "extinct"), crossing.view, Vector2.ZERO), "...but one that is held already is not taken twice")
+	var offscreen := _gift_setup()
+	var far_walker = _walker_of(offscreen[0], "saseum")
+	_gift_place(far_walker, Vector2(900.0, 900.0))
+	var waiting: Dictionary = offscreen[1].request("saseum", "extinct")
+	check(not offscreen[1].bind_on_screen(waiting, offscreen[0].view, Vector2.ZERO) and waiting["state"] == GiftsScript.WAITING, "an animal off screen does not count: the job waits")
+	var other = _walker_of(offscreen[0], "noru")
+	check(not offscreen[1].on_spawn(other) and waiting["state"] == GiftsScript.WAITING, "a spawn of another kind leaves it waiting")
+	var next_deer = _walker_of(offscreen[0], "saseum")
+	check(offscreen[1].on_spawn(next_deer) and waiting["walker"] == next_deer and next_deer.held, "the next one of the kind to spawn takes it")
+	check(g.request("meotdwaeji", "common").is_empty() and not g.has_gift("meotdwaeji"), "the 멧돼지 has no gift: no job")
+	# Walks to the traveler and stops short of it.
+	var events := _gift_ticks(g, Vector2(30.0, 10.0), 0.4)
+	check(first.held_pos.distance_to(Vector2(30.0, 10.0)) < 14.0 and job["state"] == GiftsScript.WALKING, "it walks toward the controlled traveler")
+	events = _gift_ticks(g, Vector2(30.0, 10.0), 8.0)
+	var arrived := false
+	for e in events:
+		arrived = arrived or e["event"] == "arrive"
+	check(arrived and is_equal_approx(first.held_pos.distance_to(Vector2(30.0, 10.0)), float(_animals_config()["gifts"]["kinds"]["goraeni"]["arrive_m"])), "it stops arrive_m from the traveler (%.2f)" % first.held_pos.distance_to(Vector2(30.0, 10.0)))
+	check(job["state"] == GiftsScript.DONE and not first.held, "after its act it is released and goes on its way")
+
+	# ---- Grabbed on the way: the next one of the kind ----
+	made = _gift_setup()
+	crossing = made[0]
+	g = made[1]
+	var runner = _walker_of(crossing, "goraeni")
+	_gift_place(runner, Vector2(44.0, 14.0))
+	var j2: Dictionary = g.request("goraeni", "extinct")
+	g.bind_on_screen(j2, crossing.view, Vector2(30.0, 10.0))
+	_gift_ticks(g, Vector2(30.0, 10.0), 0.3)
+	crossing.flee(runner, 2.5)  # a grab sends it off
+	var unbound := _gift_ticks(g, Vector2(30.0, 10.0), 0.1)
+	var told := false
+	for e in unbound:
+		told = told or e["event"] == "unbound"
+	check(told and j2["state"] == GiftsScript.WAITING and j2["walker"] == null, "an animal that is grabbed on the way gives the job back")
+	var replacement = _walker_of(crossing, "goraeni")
+	check(g.on_spawn(replacement) and j2["walker"] == replacement, "...and the next one of the kind takes it")
+	# Gone after it began its act: the rest of the plan is played at once.
+	_gift_ticks(g, Vector2(30.0, 10.0), 10.0, [])
+	var j3: Dictionary = g.request("goraeni", "extinct")
+	var late = _walker_of(crossing, "goraeni")
+	for other_walker in crossing.alive.duplicate():
+		if other_walker != late:
+			crossing.remove(other_walker)
+	_gift_place(late, Vector2(31.0, 11.0))
+	g.bind_on_screen(j3, crossing.view, Vector2(30.0, 10.0))
+	var early := _gift_ticks(g, Vector2(30.0, 10.0), 0.3)
+	crossing.remove(late)  # (a predator took it)
+	var flushed := _gift_effects(_gift_ticks(g, Vector2(30.0, 10.0), 0.1))
+	check(j3["state"] == GiftsScript.DONE and _effects_of_type(_gift_effects(early) + flushed, "give").size() == 1, "an animal lost during its act still hands over its gift")
+
+	# ---- Each kind's gift, with the times of its tier ----
+	var r := _gift_run("goraeni", "extinct")
+	var gives := _effects_of_type(r["effects"], "give")
+	check(r["bound"] and gives.size() == 1 and gives[0]["item"] == "eomuk_kkochi" and gives[0]["count"] == 2, "고라니 (extinct): spits an 어묵꼬치, twice")
+	var fxs := _effects_of_type(r["effects"], "fx")
+	check(fxs.size() == 1 and fxs[0]["name"] == "spit" and fxs[0]["to"] == "nestor", "...and it sticks in Nestor's forehead")
+	r = _gift_run("noru", "endangered", "male")
+	gives = _effects_of_type(r["effects"], "give")
+	fxs = _effects_of_type(r["effects"], "fx")
+	check(gives.size() == 1 and gives[0]["item"] == "noru_antler" and gives[0]["count"] == 2 and _effects_of_type(r["effects"], "pickup").is_empty(), "노루, male (endangered): drops two 노루뿔")
+	check(fxs.size() == 1 and fxs[0]["name"] == "antler_drop" and fxs[0]["to"] == "fernanda", "...on Fernanda's foot")
+	r = _gift_run("noru", "endangered", "female")
+	var pickups := _effects_of_type(r["effects"], "pickup")
+	check(pickups.size() == 2 and pickups[0]["item"] == "deungsan_stick" and pickups[0]["place"] == "behind" and _effects_of_type(r["effects"], "give").is_empty(), "노루, female (endangered): two 등산스틱 pickups behind her, nothing in the backpack")
+	r = _gift_run("noru", "common", "female")
+	check(_effects_of_type(r["effects"], "pickup").size() == 1, "...one if the tier were common (the times follow the tier)")
+	r = _gift_run("saseum", "extinct")
+	gives = _effects_of_type(r["effects"], "give")
+	fxs = _effects_of_type(r["effects"], "fx")
+	check(gives.size() == 1 and gives[0]["item"] == "selcabong" and gives[0]["count"] == 2 and fxs[0]["name"] == "bow", "사슴 (extinct): bows, and gives a 셀카봉 twice")
+	r = _gift_run("keunburikkamagwi", "common")
+	gives = _effects_of_type(r["effects"], "give")
+	fxs = _effects_of_type(r["effects"], "fx")
+	check(gives.size() == 1 and gives[0]["item"] == "jipge" and gives[0]["count"] == 1 and fxs[0]["name"] == "head_drop" and fxs[0]["to"] == "controlled", "큰부리까마귀: drops a 집게 on the traveler's head")
+	r = _gift_run("geomdokseuri", "endangered")
+	pickups = _effects_of_type(r["effects"], "pickup")
+	fxs = _effects_of_type(r["effects"], "fx")
+	check(pickups.size() == 2 and pickups[0]["item"] == "deungsan_stick" and pickups[0]["place"] == "beside_fernanda" and fxs[0]["name"] == "spear" and fxs[0]["to"] == "fernanda", "검독수리 (endangered): spears two 등산스틱 beside Fernanda")
+	r = _gift_run("bibaribaem", "endangered")
+	gives = _effects_of_type(r["effects"], "give")
+	fxs = _effects_of_type(r["effects"], "fx")
+	check(gives.size() == 1 and gives[0]["item"] == "snake_skin" and gives[0]["count"] == 2 and fxs[0]["name"] == "wrap", "비바리뱀 (endangered): wraps an arm, and gives two 비바리뱀 허물")
+	r = _gift_run("osori", "common")
+	pickups = _effects_of_type(r["effects"], "pickup")
+	var popped: Array = []
+	for p in pickups:
+		popped.append(p["item"])
+	check(popped == ["tteulchae", "empty_bottle", "ssanghwatang"] and _effects_of_type(r["effects"], "fx").size() == 2, "오소리: digs a mound, then 뜰채, 빈 막걸리병 and 쌍화탕 pop out as pickups")
+	r = _gift_run("osori", "common")
+	check(_effects_of_type(r["effects"], "give").is_empty(), "...pickups only, nothing straight into the backpack")
+	# 족제비: one random non-tool backpack item goes round a lap and comes back, plus a 효자손.
+	var held := [{"id": "ssanghwatang", "count": 2}, {"id": "sucheop", "count": 1}, {"id": "hallasan_exit_2", "count": 1}, {"id": "ddeok", "count": 5}]
+	r = _gift_run("jejujokjebi", "common", "", held)
+	var taken := _effects_of_type(r["effects"], "take")
+	var returned := _effects_of_type(r["effects"], "return")
+	gives = _effects_of_type(r["effects"], "give")
+	check(taken.size() == 1 and returned.size() == 1 and taken[0]["item"] == "ssanghwatang" and returned[0]["item"] == taken[0]["item"], "족제비: takes a backpack item (never the notebook, a note or DDEOK) and returns the same one")
+	check(gives.size() == 1 and gives[0]["item"] == "hyojason" and gives[0]["count"] == 1, "...plus a 효자손")
+	var order: Array = []
+	for effect in r["effects"]:
+		order.append(effect["type"])
+	check(order.find("take") < order.find("return") and order.find("return") <= order.find("give"), "...the item is back before the gift")
+	r = _gift_run("jejujokjebi", "common", "", [{"id": "sucheop", "count": 1}])
+	check(_effects_of_type(r["effects"], "take").is_empty() and _effects_of_type(r["effects"], "return").is_empty() and _effects_of_type(r["effects"], "give").size() == 1, "with nothing to take it only gives the 효자손")
+	# The lap goes round the traveler.
+	made = _gift_setup()
+	crossing = made[0]
+	g = made[1]
+	var weasel = _walker_of(crossing, "jejujokjebi")
+	_gift_place(weasel, Vector2(40.0, 12.0))
+	g.bind_on_screen(g.request("jejujokjebi", "common"), crossing.view, Vector2(30.0, 10.0))
+	var far := 0.0
+	for i in 200:
+		g.tick(0.05, {"target": Vector2(30.0, 10.0), "inventory": [{"id": "ssanghwatang", "count": 1}]})
+		far = maxf(far, weasel.held_pos.distance_to(Vector2(30.0, 10.0)))
+	check(far > 2.5, "the weasel runs a lap round the traveler (%.1f m out)" % far)
+	# 들개: the pickup is bait for an attack by that dog.
+	r = _gift_run("deulgae", "common")
+	pickups = _effects_of_type(r["effects"], "pickup")
+	check(pickups.size() == 1 and pickups[0]["item"] == "hyojason" and pickups[0]["attack"] == true and pickups[0]["place"] == "drop", "들개: drops a 효자손 pickup that is bait for its attack")
+	check(r["job"]["state"] == GiftsScript.BAIT and r["walker"].held, "...and waits for it, held where it stands")
+	check(r["g"].pickup_taken(int(r["job"]["id"])) and r["job"]["state"] == GiftsScript.DONE, "taking it tells the scene to start the attack")
+	check(not r["g"].pickup_taken(int(r["job"]["id"])), "...once")
+	r = _gift_run("deulgae", "common")
+	r["g"]._queue.clear()
+	_gift_ticks(r["g"], Vector2(30.0, 10.0), 45.0)
+	check(r["job"]["state"] == GiftsScript.DONE and not r["walker"].held and not r["g"].pickup_taken(int(r["job"]["id"])), "a dog nobody takes the bait from gives up and leaves; no attack comes")
+	# 오리: waits for Space.
+	made = _gift_setup()
+	crossing = made[0]
+	g = made[1]
+	var duck = _walker_of(crossing, "ori")
+	_gift_place(duck, Vector2(44.0, 14.0))
+	var dj: Dictionary = g.request("ori", "common")
+	g.bind_on_screen(dj, crossing.view, Vector2(30.0, 10.0))
+	events = _gift_ticks(g, Vector2(30.0, 10.0), 10.0)
+	var asked := false
+	for e in events:
+		asked = asked or e["event"] == "ask"
+	check(asked and dj["state"] == GiftsScript.ASKING and _gift_effects(events).is_empty(), "오리: waddles up with the gloves and won't let go: nothing is given in 10 s")
+	check(not g.press_space(Vector2(10.0, 10.0)) and dj["state"] == GiftsScript.ASKING, "Space far from it does nothing")
+	check(g.press_space(Vector2(30.0, 10.0)) and dj["state"] == GiftsScript.ACTING, "Space near it: 'thank you'")
+	events = _gift_ticks(g, Vector2(30.0, 10.0), 3.0)
+	gives = _effects_of_type(_gift_effects(events), "give")
+	check(gives.size() == 1 and gives[0]["item"] == "gomu_janggap" and gives[0]["count"] == 1 and dj["state"] == GiftsScript.DONE, "...then it gives the 고무장갑")
+	# The roe deer's sex is rolled for every spawn: about half male.
+	var rolls := _gift_setup(11)
+	var males := 0
+	for i in 400:
+		var fake = CrossingScript.Walker.new()
+		fake.id = i + 1
+		fake.kind = {"id": "noru", "speed": 3.5, "flies": false}
+		rolls[1].on_spawn(fake)
+		males += 1 if rolls[1].sex_of(fake) == "male" else 0
+	check(males > 140 and males < 260, "a spawning roe deer is male about half the time (%d of 400)" % males)
+	var same := _gift_setup(11)
+	var again := 0
+	for i in 400:
+		var fake2 = CrossingScript.Walker.new()
+		fake2.id = i + 1
+		fake2.kind = {"id": "noru", "speed": 3.5, "flies": false}
+		same[1].on_spawn(fake2)
+		again += 1 if same[1].sex_of(fake2) == "male" else 0
+	check(again == males, "...from the seed: the same seed, the same sexes")
+
+	# ---- 도감 pages and trophies ----
+	var dogam: Dictionary = _animals_config()["dogam"]
+	var bag = InventoryScript.new()
+	var found: Dictionary = GiftsScript.collection(dogam, "goraeni", "extinct", bag)
+	check(found["page"] == "dogam_goraeni" and found["trophy"] == "goranee_fang", "an extinct kind with a trophy gives its page and its trophy")
+	bag.add("dogam_goraeni")
+	bag.add("goranee_fang")
+	found = GiftsScript.collection(dogam, "goraeni", "extinct", bag)
+	check(found["page"] == "" and found["trophy"] == "", "...once: never again while they are held (unique per hike)")
+	found = GiftsScript.collection(dogam, "saseum", "extinct", bag)
+	check(found["page"] == "dogam_saseum" and found["trophy"] == "deer_antler", "사슴: its page and the 사슴뿔")
+	found = GiftsScript.collection(dogam, "noru", "endangered", bag)
+	check(found["page"] == "dogam_noru" and found["trophy"] == "", "an endangered kind gives its page and no trophy")
+	found = GiftsScript.collection(dogam, "bibaribaem", "endangered", bag)
+	check(found["page"] == "dogam_bibaribaem" and found["trophy"] == "", "비바리뱀: a page")
+	found = GiftsScript.collection(dogam, "geomdokseuri", "endangered", bag)
+	check(found["page"] == "dogam_geomdokseuri" and found["trophy"] == "", "검독수리: a page")
+	var none_ok := true
+	for kind_id in ["meotdwaeji", "deulgae", "osori", "jejujokjebi", "ori", "keunburikkamagwi"]:
+		var f: Dictionary = GiftsScript.collection(dogam, kind_id, "common", InventoryScript.new())
+		none_ok = none_ok and f["page"] == "" and f["trophy"] == ""
+	check(none_ok, "common kinds give neither a page nor a trophy")
+	check(GiftsScript.collection(dogam, "noru", "common", InventoryScript.new())["page"] == "", "the tier decides, not the kind")
+	_section_done("test_gifts9f_logic")
+
+
+## Meets one need shown by `kind_id` through the real path; returns its id ("" if none is left).
+func _gift_need(map: Node3D, kind_id: String) -> String:
+	var e: Dictionary = map.needs.discover(kind_id)
+	if e.is_empty():
+		return ""
+	map._on_need_discovered(e)
+	if e["kind"] == "item":
+		GameState.inventory.add(e["item"])
+		map.give_item(e["id"])
+	else:
+		_spell_word(map, e["id"])
+	get_tree().paused = false
+	return String(e["id"])
+
+
+## An animal of `kind_id` standing on screen at `offset` from the controlled traveler.
+func _gift_animal(map: Node3D, kind_id: String, offset := Vector2(4.0, 0.0)):
+	var w = _walker_of(map.crossing, kind_id)
+	map._add_animal(w)
+	map._gift_spawned(w)
+	_gift_place(w, _xz(map.player) + offset)
+	return w
+
+
+func _inv(id: String) -> int:
+	return GameState.inventory.count(id)
+
+
+func test_gifts9f_scene() -> void:
+	var window_before := get_window().size
+	get_window().size = Vector2i(1280, 720)
+	await get_tree().process_frame
+	AnimalsScript.gifts_enabled = true
+	var cfg := _animals_config()
+
+	# ---- 6..9 heal bottles ----
+	var counts: Array[int] = []
+	for seed_value in [211, 212, 213, 214, 215]:
+		GameState.new_hike()
+		var m: Node3D = await _animals_map(seed_value)
+		var bottles := 0
+		for index in m.pickup_items:
+			bottles += 1 if Content.item(String(m.pickup_items[index])).get("kind", "") == "elixir" else 0
+		counts.append(bottles)
+		m.free()
+		get_tree().paused = false
+	var counts_ok := true
+	for n in counts:
+		counts_ok = counts_ok and n >= 6 and n <= 9
+	check(counts_ok, "6-9 bottles lie around (%s)" % str(counts))
+
+	# ---- 고라니, on screen: delivered now (extinct: twice), a skewer on Nestor, a page and a trophy ----
+	GameState.new_hike()
+	var map: Node3D = await _animals_map(221)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var deer = _gift_animal(map, "goraeni")
+	check(map.view_rect().has_point(deer.position()) and map.gifts != null, "(setup) the animal is on screen")
+	var skewers := GameState.tools.count("eomuk_kkochi")
+	_gift_need(map, "goraeni")
+	check(map.gifts.jobs.size() == 1 and map.gifts.jobs[0]["state"] == GiftsScript.WALKING and deer.held, "meeting the need sends the animal on screen at once")
+	check(_inv("dogam_goraeni") == 1 and _inv("goranee_fang") == 1, "the 도감 page and the 고라니 송곳니 are in the backpack")
+	_run(map, 8.0)
+	check(GameState.tools.count("eomuk_kkochi") == skewers + 2, "two 어묵꼬치 on the belt (%d -> %d)" % [skewers, GameState.tools.count("eomuk_kkochi")])
+	var full := true
+	for t in GameState.tools.tools():
+		if t["id"] == "eomuk_kkochi":
+			full = full and int(t["uses"]) == int(Content.item("eomuk_kkochi")["uses"])
+	check(full, "...with all their uses")
+	check(map.travelers["nestor"].has_node("Skewer") and not map.travelers["fernanda"].has_node("Skewer"), "a skewer sticks in Nestor's forehead")
+	check(map.gifts.jobs[0]["state"] == GiftsScript.DONE and not deer.held, "the animal is released after its act")
+	var hearts: int = GameState.heart_units["nestor"]
+	check(hearts == GameState.max_units(), "...and he does not react (no damage)")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 노루, nobody on screen: the next noru to spawn comes; its sex shows; the page is given once ----
+	GameState.new_hike()
+	map = await _animals_map(222)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var first_need := _gift_need(map, "noru")
+	check(first_need != "" and map.gifts.jobs.size() == 1 and map.gifts.jobs[0]["state"] == GiftsScript.WAITING, "no noru on screen: the job waits for the next one")
+	check(_inv("dogam_noru") == 1 and _inv("goranee_fang") == 0, "the 노루 page is in the backpack")
+	var second_need := _gift_need(map, "noru")
+	check(second_need != "" and _inv("dogam_noru") == 1, "a second 노루 need adds no second page (once per kind per hike)")
+	var deer2 = _walker_of(map.crossing, "noru")
+	map._add_animal(deer2)
+	map._gift_spawned(deer2)
+	check(map.gifts.jobs[0]["state"] == GiftsScript.WALKING and map.gifts.jobs[0]["walker"] == deer2 and deer2.held, "the next noru to spawn takes the gift (and walks to the traveler)")
+	check(map.animal_nodes[deer2].has_node("Antlers") == (map.gifts.sex_of(deer2) == "male"), "a male wears small antlers on its model; a female does not")
+	var antlers_before := _inv("noru_antler")
+	var piles_before: int = map.pickup_items.size()
+	var spot_seen := false
+	var behind_ok := false
+	for i in 400:
+		_run(map, 0.05)
+		if map.pickup_items.size() > piles_before and not spot_seen:
+			spot_seen = true
+			var index: int = map.pickup_items.keys()[piles_before]
+			var lie: Vector2 = map.picking.pile_spot(index)
+			var heading: Vector2 = deer2.held_heading
+			behind_ok = absf(lie.distance_to(deer2.held_pos) - 2.0) < 0.15 and (lie - deer2.held_pos).dot(heading) < 0.0
+	_run(map, 3.0)
+	if map.gifts.sex_of(deer2) == "male":
+		check(_inv("noru_antler") == antlers_before + 2 and map.pickup_items.size() == piles_before, "a male drops two 노루뿔 on Fernanda's foot (backpack, no pickups)")
+	else:
+		check(map.pickup_items.size() == piles_before + 2 and _inv("noru_antler") == antlers_before and behind_ok, "a female stands and stares; two 등산스틱 pickups appear 2 m behind her")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 오리: it keeps the gloves until Space is pressed near it ----
+	GameState.new_hike()
+	map = await _animals_map(223)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var duck = _gift_animal(map, "ori", Vector2(5.0, 1.0))
+	_gift_need(map, "ori")
+	_run(map, 8.0)
+	check(map.gifts.jobs[0]["state"] == GiftsScript.ASKING and GameState.tools.count("gomu_janggap") == 0, "the duck waits next to the traveler with the 고무장갑")
+	check(String(map.animal_nodes[duck].label.text).contains("Space"), "...its label says what to press")
+	check(map.pick_nearest() and map.gifts.jobs[0]["state"] == GiftsScript.ACTING, "Space near it: 'thank you'")
+	_run(map, 3.0)
+	check(GameState.tools.count("gomu_janggap") == 1 and map.gifts.jobs[0]["state"] == GiftsScript.DONE, "...then the 고무장갑 is on the belt")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 들개: the pickup starts a telegraphed attack by that dog ----
+	GameState.new_hike()
+	map = await _animals_map(224)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	var dog = _gift_animal(map, "deulgae", Vector2(5.0, 0.0))
+	_gift_need(map, "deulgae")
+	var belt := GameState.tools.count("hyojason")
+	_run(map, 5.0)
+	check(map.pickup_gift.size() == 1 and map.gifts.jobs[0]["state"] == GiftsScript.BAIT and map.predators.phase_of(dog) == "", "the dog drops a 효자손 pickup and waits; no attack yet")
+	var bait: int = map.pickup_gift.keys()[0]
+	var bait_at: Vector2 = map.picking.pile_spot(bait)
+	_put(map, map.player, bait_at.x, bait_at.y)
+	await get_tree().physics_frame
+	var taken: Dictionary = map.collect_pickup(bait)
+	check(taken.get("item", "") == "hyojason" and GameState.tools.count("hyojason") == belt + 1, "taking the pickup puts a 효자손 on the belt")
+	check(map.predators.phase_of(dog) == "telegraph" and map.predators.marks().size() == 1 and map.predators.marks()[0]["walker"] == dog, "...and that dog starts a telegraphed attack at once")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 족제비: a backpack item goes round and comes back with a 효자손 ----
+	GameState.new_hike()
+	GameState.inventory.add("ssanghwatang", 3)
+	map = await _animals_map(225)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_gift_animal(map, "jejujokjebi", Vector2(5.0, 0.0))
+	_gift_need(map, "jejujokjebi")
+	var before := _inv("ssanghwatang")
+	var base := _count_all_items()
+	var belt2 := GameState.tools.count("hyojason")
+	var lowest := base
+	for i in 260:
+		_run(map, 0.05)
+		lowest = mini(lowest, _count_all_items())
+	check(lowest == base - 1, "the weasel took one item for a while (%d, then %d)" % [lowest, _count_all_items()])
+	check(_inv("ssanghwatang") == before and GameState.tools.count("hyojason") == belt2 + 1, "...and returned it, plus a 효자손")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 검독수리 and 오소리: the pickups lie where they should ----
+	GameState.new_hike()
+	map = await _animals_map(226)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_gift_animal(map, "geomdokseuri", Vector2(5.0, -1.0))
+	var piles: int = map.pickup_items.size()
+	_gift_need(map, "geomdokseuri")
+	_run(map, 8.0)
+	var fern: Vector2 = _xz(map.travelers["fernanda"])
+	var ring_ok: bool = map.pickup_items.size() == piles + 2
+	for i in range(piles, map.pickup_items.size()):
+		var index2: int = map.pickup_items.keys()[i]
+		ring_ok = ring_ok and absf(map.picking.pile_spot(index2).distance_to(fern) - 1.0) < 0.02 and map.pickup_items[index2] == "deungsan_stick"
+	check(ring_ok, "검독수리 (endangered): two 등산스틱 pickups, each 1 m beside Fernanda")
+	check(_inv("dogam_geomdokseuri") == 1, "...and its 도감 page")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	map = await _animals_map(227)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_gift_animal(map, "osori", Vector2(5.0, 0.0))
+	piles = map.pickup_items.size()
+	_gift_need(map, "osori")
+	_run(map, 8.0)
+	var found_items: Array = []
+	for i in range(piles, map.pickup_items.size()):
+		found_items.append(map.pickup_items[map.pickup_items.keys()[i]])
+	check(found_items == ["tteulchae", "empty_bottle", "ssanghwatang"], "오소리: a mound, then 뜰채, 빈 막걸리병 and 쌍화탕 lie on the map %s" % str(found_items))
+	check(map.has_node("DigMound") or _count_named(map, "DigMound") > 0, "...beside a poop mound")
+	var jar := -1
+	for index3 in map.pickup_items:
+		if map.pickup_items[index3] == "empty_bottle":
+			jar = index3
+	var jar_at: Vector2 = map.picking.pile_spot(jar)
+	_put(map, map.player, jar_at.x, jar_at.y)
+	await get_tree().physics_frame
+	check(map.collect_pickup(jar).get("item", "") == "empty_bottle" and _inv("empty_bottle") == 1, "the empty bottle can be picked up (a junk item)")
+	map.free()
+	get_tree().paused = false
+
+	# ---- 멧돼지: nothing yet; common kinds: no page ----
+	GameState.new_hike()
+	map = await _animals_map(228)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_gift_animal(map, "meotdwaeji", Vector2(5.0, 0.0))
+	_gift_need(map, "meotdwaeji")
+	var bag_after := _count_all_items()
+	_run(map, 6.0)
+	check(map.gifts.jobs.is_empty() and _count_all_items() == bag_after and _inv("dogam_noru") == 0, "a met 멧돼지 need gives no gift and no page")
+	map.free()
+	get_tree().paused = false
+
+	# ---- A trophy already held is not given twice ----
+	GameState.new_hike()
+	GameState.inventory.add("deer_antler")
+	map = await _animals_map(229)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	_gift_need(map, "saseum")
+	check(_inv("deer_antler") == 1 and _inv("dogam_saseum") == 1, "a held 사슴뿔 is not given again; the page still is")
+	map.free()
+	get_tree().paused = false
+
+	# ---- The dev kit ----
+	GameState.new_hike()
+	GameState.kits_given.erase("debug_kit")
+	AnimalsScript.debug_kit_override = false
+	map = await _animals_map(230)
+	check(not map.debug_kit and _inv("ssanghwatang") == 0 and GameState.tools.count("tteulchae") == 0 and GameState.tools.count("jamjarichae") == 0, "without --debug-kit there is no kit")
+	var f9 := InputEventKey.new()
+	f9.keycode = KEY_F9
+	f9.pressed = true
+	map._unhandled_input(f9)
+	check(map.needs.entries.is_empty() and map.needs.done.is_empty() and map.debug_complete_need() == "", "...and F9 does nothing")
+	map.free()
+	get_tree().paused = false
+	GameState.new_hike()
+	GameState.kits_given.erase("debug_kit")
+	AnimalsScript.debug_kit_override = true
+	AnimalsScript.exit_enabled = true
+	map = await _animals_map(231)
+	_hint_quiet_guide()
+	map.crossing._until_spawn = 1.0e9
+	check(map.debug_kit and _inv("ssanghwatang") == 3, "with --debug-kit: 3 쌍화탕 in the backpack")
+	check(GameState.tools.count("jamjarichae") == 1 and GameState.tools.count("tteulchae") == 1 and GameState.tools.count("deungsan_stick") == 1, "...and a 잠자리채, 뜰채 and 등산스틱 on the belt")
+	var f9_first := InputEventKey.new()
+	f9_first.keycode = KEY_F9
+	f9_first.pressed = true
+	map._unhandled_input(f9_first)
+	check(map.needs.entries.size() == 1 and map.needs.done.size() == 1, "F9 with an empty list discovers a need and completes it")
+	var e2: Dictionary = map.needs.discover("noru")
+	map._on_need_discovered(e2)
+	var e3: Dictionary = map.needs.discover("saseum")
+	map._on_need_discovered(e3)
+	var oldest := String(map.needs.entries[1]["id"])
+	check(map.debug_complete_need() == oldest and map.needs.done.has(oldest) and not map.needs.done.has(String(map.needs.entries[2]["id"])), "F9 completes the oldest discovered need first")
+	for i in 6:
+		map.debug_complete_need()
+	check(map.needs.done.size() == 6 and map.needs_finished and map.exit_flow.exit_open, "F9 six times: every need is met, and the way out opens")
+	check(map.debug_complete_need() == "", "...then F9 has nothing left to do")
+	map.free()
+	get_tree().paused = false
+
+	AnimalsScript.debug_kit_override = false
+	AnimalsScript.gifts_enabled = false
+	AnimalsScript.exit_enabled = false
+	_bare_hike()
+	get_window().size = window_before
+	await get_tree().process_frame
+	_section_done("test_gifts9f_scene")
+
+
+## Every counted item and tool held.
+func _count_all_items() -> int:
+	var n := 0
+	for entry in GameState.inventory.items():
+		n += int(entry["count"])
+	return n + GameState.tools.tools().size()

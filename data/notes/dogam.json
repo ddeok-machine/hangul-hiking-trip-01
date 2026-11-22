@@ -1,0 +1,40 @@
+{
+  "_note": "도감 (field guide) pages of the animal scene (Prompt 9f): meeting the need of an endangered or extinct kind adds its page to the 수첩 once per hike (animals.dogam). Each page is one note with the 'field_guide' style from its first line on; the first line is the title. This file sorts before hallasan.json, so the exit notes stay the newest pages.",
+  "notes": [
+    {
+      "id": "dogam_noru",
+      "writer": "unknown",
+      "style": "field_guide",
+      "styled_from_line": 0,
+      "text": "노루 · Roe deer\nNearly wiped out on Jeju in the 1980s. Then there were too many.\nJeju called them pests and culled 7,032 between 2013 and 2019.\nEats 콩 and 고구마, preferably yours. Males drop their antlers in autumn."
+    },
+    {
+      "id": "dogam_bibaribaem",
+      "writer": "unknown",
+      "style": "field_guide",
+      "styled_from_line": 0,
+      "text": "비바리뱀 · Bibari snake\nIn Korea, found only on Jeju. Class I endangered.\nEats lizards. Extremely shy. Please do not step on it."
+    },
+    {
+      "id": "dogam_geomdokseuri",
+      "writer": "unknown",
+      "style": "field_guide",
+      "styled_from_line": 0,
+      "text": "검독수리 · Golden eagle\nClass I endangered. A nest was confirmed near Hallasan\nfor the first time in 77 years. Sees you before you see it."
+    },
+    {
+      "id": "dogam_goraeni",
+      "writer": "unknown",
+      "style": "field_guide",
+      "styled_from_line": 0,
+      "text": "고라니 · Water deer\nExtinct on Hallasan. Vulnerable worldwide.\nMales grow long fangs. It screams. You'd scream too."
+    },
+    {
+      "id": "dogam_saseum",
+      "writer": "unknown",
+      "style": "field_guide",
+      "styled_from_line": 0,
+      "text": "사슴 · Deer\nThe native deer is gone from Hallasan.\nDeer released in the 1990s now push out the 노루.\nNobody asked the 노루."
+    }
+  ]
+}

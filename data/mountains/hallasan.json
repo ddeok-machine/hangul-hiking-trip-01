@@ -539,7 +539,7 @@
     },
     "heal_pickups": {
       "_note": "Prompt 9b-ii: healing bottles lying on the map. At scene start (seeded) count_min..count_max of them, each item rolled by weight, each at a random walkable land point outside the lake, at least min_spacing_m from the travelers' starts and from each other. Space within the pick radius or a click-walk picks one into Fernanda's backpack, with a floating label like a finished word's. 'look' is the placeholder bottle: a cylinder of radius and height m standing lift m up, bobbing bob_m at bob_hz, with the item's Korean name label_lift m above it.",
-      "count_min": 2, "count_max": 4, "min_spacing_m": 2.0,
+      "count_min": 6, "count_max": 9, "min_spacing_m": 2.0,
       "weights": {"ssanghwatang": 4, "gongjindan": 1},
       "look": {"radius": 0.09, "height": 0.4, "lift": 0.1, "bob_m": 0.08, "bob_hz": 0.6, "color": [0.55, 0.78, 0.5], "label_lift": 0.35, "label_font_size": 40, "label_pixel_size": 0.008, "label_outline_size": 8}
     },
@@ -566,6 +566,63 @@
     "tool_rewards": {
       "_note": "Prompt 9c: after the items of need_rewards, meeting a need rolls one more time for a tool, by the tier of the kind it was discovered from (chance 0..1); a win is one tool picked by tool_pickups.weights. Its own seeded rng, so need_rewards' sequence is untouched.",
       "common": 0.25, "endangered": 0.4, "extinct": 0.6
+    },
+    "gifts": {
+      "_note": "Prompt 9f: what an animal gives when its kind's need is met (scenes/animals/gifts.gd). If an animal of the kind is on screen it delivers now, else the next one of the kind to spawn walks (walk_mult x its speed) to the controlled traveler and delivers. 'times' per tier is how often the gift items come (endangered and extinct deliver twice). A kind's plan: 'arrive_m' (how near it stops), 'act_s' (how long the act lasts after it arrives), 'steps' [{at (seconds into the act), then fx (a placeholder effect, 'to' = who it hits: nestor, fernanda or controlled), give (items to the backpack; a tool goes on the belt with full uses), pickup (items that appear on the map: place behind | beside_fernanda | scatter | drop; 'attack' = taking it starts a telegraphed attack by that animal), take / return (the weasel's item)}]. 'wait_space' = it holds the gift until Space is pressed within 'near_m'. 'hold_s' = it stays that long for its pickup to be taken. 'lap' = it runs a circle round the traveler. Noru has 'male_chance' and one plan per sex, rolled for every noru that spawns; the 멧돼지 has no plan (9g).",
+      "times": {"common": 1, "endangered": 2, "extinct": 2},
+      "walk_mult": 1.8,
+      "arrive_m": 1.6,
+      "fx": {"thunk_text": "thunk", "thanks_text": "thank you!", "space_text": "Space", "stare_text": "...", "fall_s": 0.5, "spit_s": 0.4, "bow_s": 1.0, "wrap_s": 1.6, "skewer_color": [0.2, 0.2, 0.24], "antler_color": [0.85, 0.8, 0.7], "mound_color": [0.36, 0.22, 0.12], "mound_radius": 0.28, "wrap_color": [0.3, 0.55, 0.25], "pole_color": [0.35, 0.45, 0.35], "tool_color": [0.75, 0.6, 0.35], "antler_height_m": 0.35},
+      "kinds": {
+        "goraeni": {"arrive_m": 2.2, "act_s": 1.6, "steps": [
+          {"at": 0.4, "fx": "spit", "to": "nestor"},
+          {"at": 0.9, "give": ["eomuk_kkochi"]}]},
+        "noru": {"arrive_m": 2.4, "male_chance": 0.5,
+          "male": {"act_s": 2.0, "steps": [
+            {"at": 0.4, "fx": "antler_drop", "to": "fernanda"},
+            {"at": 0.9, "give": ["noru_antler"]}]},
+          "female": {"act_s": 2.4, "steps": [
+            {"at": 0.4, "fx": "stare"},
+            {"at": 1.0, "pickup": ["deungsan_stick"], "place": "behind"}]}},
+        "saseum": {"arrive_m": 2.2, "act_s": 2.0, "steps": [
+          {"at": 0.0, "fx": "bow"},
+          {"at": 1.0, "give": ["selcabong"]}]},
+        "ori": {"arrive_m": 1.2, "wait_space": true, "near_m": 2.5, "act_s": 1.6, "steps": [
+          {"at": 0.0, "fx": "thanks"},
+          {"at": 0.6, "give": ["gomu_janggap"]}]},
+        "keunburikkamagwi": {"arrive_m": 0.6, "act_s": 1.4, "steps": [
+          {"at": 0.0, "fx": "head_drop", "to": "controlled"},
+          {"at": 0.6, "give": ["jipge"]}]},
+        "geomdokseuri": {"arrive_m": 6.0, "act_s": 1.6, "steps": [
+          {"at": 0.0, "fx": "spear", "to": "fernanda"},
+          {"at": 0.8, "pickup": ["deungsan_stick"], "place": "beside_fernanda"}]},
+        "bibaribaem": {"arrive_m": 1.0, "act_s": 2.0, "steps": [
+          {"at": 0.0, "fx": "wrap", "to": "controlled"},
+          {"at": 1.0, "give": ["snake_skin"]}]},
+        "osori": {"arrive_m": 2.4, "act_s": 2.4, "steps": [
+          {"at": 0.0, "fx": "dig"},
+          {"at": 1.5, "fx": "mound"},
+          {"at": 1.6, "pickup": ["tteulchae", "empty_bottle", "ssanghwatang"], "place": "scatter"}]},
+        "jejujokjebi": {"arrive_m": 1.6, "act_s": 4.6, "lap": {"radius": 3.0, "seconds": 3.0, "start_s": 0.6}, "steps": [
+          {"at": 0.4, "take": true},
+          {"at": 3.8, "return": true, "give": ["hyojason"]}]},
+        "deulgae": {"arrive_m": 3.0, "act_s": 0.8, "hold_s": 40.0, "steps": [
+          {"at": 0.4, "pickup": ["hyojason"], "place": "drop", "attack": true}]}
+      },
+      "takeable_kinds": ["elixir", "charm", "hint", "plant", "trophy", "souvenir", "junk"],
+      "pickup_spread_m": 1.1
+    },
+    "dogam": {
+      "_note": "Prompt 9f: the 도감 pages and trophies. Meeting a need shown by a kind whose tier is in 'tiers' adds that kind's page (a note of data/notes/dogam.json, shown in the 수첩 in the field_guide style) to the backpack, once: never again while it is held. A kind in 'trophies' also gives that trophy item the same way (unique per hike).",
+      "tiers": ["endangered", "extinct"],
+      "pages": {"noru": "dogam_noru", "bibaribaem": "dogam_bibaribaem", "geomdokseuri": "dogam_geomdokseuri", "goraeni": "dogam_goraeni", "saseum": "dogam_saseum"},
+      "trophies": {"goraeni": "goranee_fang", "saseum": "deer_antler"},
+      "page_text": "+1 도감"
+    },
+    "debug_kit": {
+      "_note": "Prompt 9f: the dev test kit, only with the --debug-kit user argument (off in normal play): these items go into the backpack and these tools onto the belt at scene start (once per hike), and F9 finishes the oldest discovered need that is not done, discovering one first if there is none.",
+      "items": [{"item": "ssanghwatang", "count": 3}],
+      "tools": ["jamjarichae", "tteulchae", "deungsan_stick"]
     },
     "hint_letters": {
       "_note": "Prompt 9c-iii (docs/production/hallasan-hint-letters-v0.1.md). A scrap of found writing in full Korean whose target word repeats, for each WORD need (item needs have none). 'idle_s' seconds of play (the clock stops in menus, the backpack, the spelling view, the death beat and a monster run) without progress (a grab of a letter an unfinished word need still lacks, or a finished syllable) float the letter of the OLDEST discovered unfinished word need that has not had its letter yet; the clock then restarts. A need gets its letter at most once per run. It floats in like the exit note (foraging.ending: same flutter, 'float_s' seconds instead of flight_s), then sits as a paper panel in the middle of the screen while the scene is paused; Space, Enter, Esc, E or a click closes it for good. It waits while the spelling view, a menu or a guide prompt is up. 'letters' is keyed by the need word: 'format' names an entry of 'formats', 'lines' are the lines shown exactly as written (\"\" is a blank line); a line that is a [label, price] pair is a receipt row, drawn in two columns with the price right-aligned. '_en' is a note for the team and is never shown. 'formats' style the paper (placeholders): width of the panel in px, font_size, margin px, bg / ink / border rgb, border_px, and the first header_lines lines as a header (header_size, header_align, header_bold, header_color, header_bg for a strip behind it). 'dim' is the alpha of the black behind the paper.",
